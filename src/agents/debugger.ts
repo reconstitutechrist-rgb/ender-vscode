@@ -3,9 +3,10 @@
  * Analyzes errors, traces issues, suggests fixes
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle } from '../types';
-import { logger } from '../utils';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle } from '../types';
+import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 
 const DEBUGGER_SYSTEM_PROMPT = `You are the Debugger Agent for Ender, an AI coding assistant.
 
@@ -30,44 +31,47 @@ OUTPUT:
 
 export class DebuggerAgent extends BaseAgent {
   constructor() {
-    super('debugger', DEBUGGER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'debugger',
+      model: 'claude-opus-4-5-20251101',
+      systemPrompt: DEBUGGER_SYSTEM_PROMPT,
+      capabilities: ['error_analysis', 'root_cause_identification', 'fix_suggestion'],
+      maxTokens: 4096
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { error?: string; stackTrace?: string }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context } = params;
     const startTime = Date.now();
 
     try {
-      const prompt = this.buildPrompt(task, options, context);
-      const response = await this.callApi({ content: prompt, context, maxTokens: 3000 });
+      const prompt = this.buildDebugPrompt(task, undefined, context);
+      const response = await this.callApi({
+        model: this.defaultModel,
+        system: this.buildSystemPrompt(context),
+        messages: this.buildMessages(prompt, context),
+        maxTokens: this.maxTokens,
+        metadata: { agent: 'debugger', taskId: generateId() }
+      });
 
-      return {
-        success: true,
-        agent: 'debugger',
-        output: response.content,
+      return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 80,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime,
-        nextAgent: 'coder' // Often needs coder to implement fix
-      };
+        startTime,
+        nextAgent: 'coder'
+      });
     } catch (error) {
       logger.error('Debugger failed', 'Debugger', { error });
-      return {
-        success: false,
-        agent: 'debugger',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'DEBUG_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
-  private buildPrompt(
+  private buildDebugPrompt(
     task: string,
     options: { error?: string; stackTrace?: string } | undefined,
     context: ContextBundle

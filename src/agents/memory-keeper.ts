@@ -3,16 +3,18 @@
  * Monitors activity, extracts learnings, updates memory
  */
 
-import { BaseAgent } from './base-agent';
-import type { 
-  AgentResult, 
-  ContextBundle, 
-  MemoryEntry, 
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type {
+  AgentConfig,
+  AgentResult,
+  ContextBundle,
+  MemoryEntry,
   MemoryCategory,
   AutoMemoryEvent,
   Plan
 } from '../types';
 import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 
 const MEMORY_KEEPER_SYSTEM_PROMPT = `You are the Memory Keeper Agent for Ender, an AI coding assistant.
 
@@ -44,53 +46,39 @@ export class MemoryKeeperAgent extends BaseAgent {
   private pendingMemories: Partial<MemoryEntry>[] = [];
 
   constructor() {
-    super('memory-keeper', MEMORY_KEEPER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'memory-keeper',
+      model: 'claude-sonnet-4-5-20250929',
+      systemPrompt: MEMORY_KEEPER_SYSTEM_PROMPT,
+      capabilities: ['learning_extraction', 'memory_management', 'summarization'],
+      maxTokens: 2048
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { 
-      event?: AutoMemoryEvent;
-      plan?: Plan;
-      content?: string;
-    }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context } = params;
     const startTime = Date.now();
 
     try {
-      let memories: Partial<MemoryEntry>[] = [];
-
-      if (options?.event) {
-        // Handle auto-memory trigger
-        memories = await this.handleAutoMemoryTrigger(options.event, context, options);
-      } else {
-        // Extract learnings from content
-        memories = await this.extractLearnings(task, context);
-      }
+      // Extract learnings from content
+      const memories = await this.extractLearnings(task, context);
 
       // Add to pending (awaiting user confirmation)
       this.pendingMemories.push(...memories);
 
-      return {
-        success: true,
-        agent: 'memory-keeper',
-        output: JSON.stringify(memories, null, 2),
+      return this.createSuccessResult(JSON.stringify(memories, null, 2), {
         explanation: `Extracted ${memories.length} potential memory entries (pending confirmation)`,
         confidence: 85,
         tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Memory Keeper failed', 'MemoryKeeper', { error });
-      return {
-        success: false,
-        agent: 'memory-keeper',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'MEMORY_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
@@ -170,7 +158,13 @@ ${content}
 
 Output as JSON array of memory entries with category, summary, detail, and tags.`;
 
-    const response = await this.callApi({ content: prompt, context, maxTokens: 2000 });
+    const response = await this.callApi({
+      model: this.defaultModel,
+      system: this.buildSystemPrompt(context),
+      messages: this.buildMessages(prompt, context),
+      maxTokens: 2000,
+      metadata: { agent: 'memory-keeper', taskId: generateId() }
+    });
 
     try {
       const jsonMatch = response.content.match(/\[[\s\S]*\]/);
@@ -207,7 +201,13 @@ Output as JSON array of memory entries with category, summary, detail, and tags.
 
 ${content}`;
 
-    const response = await this.callApi({ content: prompt, context, maxTokens: 500 });
+    const response = await this.callApi({
+      model: this.defaultModel,
+      system: this.buildSystemPrompt(context),
+      messages: this.buildMessages(prompt, context),
+      maxTokens: 500,
+      metadata: { agent: 'memory-keeper', taskId: generateId() }
+    });
     
     const originalTokens = content.length / 4;
     const summaryTokens = response.content.length / 4;

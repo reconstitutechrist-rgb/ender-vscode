@@ -18,7 +18,7 @@ import { fileRelevanceScorer, FileRelevanceScorer } from './context/file-relevan
 import { sqliteClient } from './storage';
 import { ChatPanelProvider, StatusBarProvider, TaskPanelProvider, MemoryTreeProvider, InstructionTreeProvider } from './ui/providers';
 import { SessionRecoveryManager } from './recovery';
-import type { ExtensionState, AgentType, ConductorDecision, AgentResult } from './types';
+import type { ExtensionState, AgentType, ConductorDecision } from './types';
 
 let extensionState: ExtensionState;
 let statusBar: StatusBarProvider;
@@ -36,9 +36,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   try {
     // Initialize extension state
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     extensionState = {
       initialized: false,
-      workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       hasProject: false,
       apiKeyConfigured: false,
       activeAgents: [],
@@ -51,6 +51,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
       sessionId: generateSessionId()
     };
+    if (workspaceFolder) {
+      extensionState.workspaceFolder = workspaceFolder;
+    }
 
     // Initialize API client
     const apiKey = await getApiKey(context);
@@ -306,7 +309,7 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
 
   // File save events (for auto-memory triggers)
   context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument((document) => {
+    vscode.workspace.onDidSaveTextDocument((_document) => {
       // Could trigger memory updates here
     })
   );
@@ -346,21 +349,30 @@ async function handleNewTask(task: string): Promise<void> {
     
     // Assemble context
     const relevantFiles = await getRelevantFiles(task);
-    const context = await contextAssembler.assemble({
+    const assembleParams: Parameters<typeof contextAssembler.assemble>[0] = {
       relevantFiles,
       activeMemory: await memoryManager.getHotMemories(),
       conversationHistory: chatProvider.getMessages(),
       projectSettings: {
         effective: {
+          approvalMode: 'hybrid',
+          approvalGranularity: { entirePlan: true, perPhase: false, perFile: false },
+          confidenceThreshold: 80,
+          validatorMode: 'fast',
+          contextBudget: { maxTokens: 100000, reserveForResponse: 8000 },
           verbosity: 'normal',
           codingStyle: 'functional',
           commentLevel: 'moderate',
-          customRules: []
+          customRules: [],
+          sensitiveFilePatterns: ['.env', '*.key', '*.pem']
         },
         source: 'default'
-      },
-      projectPath: extensionState.workspaceFolder
-    });
+      }
+    };
+    if (extensionState.workspaceFolder) {
+      assembleParams.projectPath = extensionState.workspaceFolder;
+    }
+    const context = await contextAssembler.assemble(assembleParams);
 
     // Execute Conductor
     const conductorResult = await conductorAgent.execute({
@@ -374,11 +386,12 @@ async function handleNewTask(task: string): Promise<void> {
 
     // Parse decision
     let decision: ConductorDecision & { directResponse?: string };
+    const output = conductorResult.output ?? '';
     try {
-      decision = JSON.parse(conductorResult.output);
+      decision = JSON.parse(output);
     } catch {
       // Fallback if output is not JSON
-      chatProvider.addAssistantMessage(conductorResult.output, 'conductor');
+      chatProvider.addAssistantMessage(output, 'conductor');
       return;
     }
 
@@ -430,9 +443,9 @@ async function handleNewTask(task: string): Promise<void> {
     
   } catch (error) {
     logger.error('Task failed', 'Extension', { error });
-    chatProvider.addAssistantMessage(`Error: ${error instanceof Error ? error.message : String(error)}`, 'system');
+    chatProvider.addAssistantMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
-    statusBar.setStatus('ready');
+    statusBar.setStatus('idle');
     chatProvider.setProcessing(false);
     chatProvider.setCurrentAgent(null);
   }
@@ -603,19 +616,24 @@ async function handleImportMemory(): Promise<void> {
  */
 async function showAssumptionLog(): Promise<void> {
   // Simple implementation using memory manager
-  const assumptions = await memoryManager.getMemoryEntries({ categories: ['known_issues'] }); // Approximation
+  const searchResult = await memoryManager.search({ categories: ['known_issues'] });
+  const assumptions = searchResult.entries;
   if (assumptions.length === 0) {
     vscode.window.showInformationMessage('No active assumptions tracked');
     return;
   }
-  
+
   const selected = await vscode.window.showQuickPick(
-    assumptions.map(a => ({ label: a.summary, detail: a.detail, description: a.status })),
+    assumptions.map((a: { summary: string; detail: string; status: string }) => ({
+      label: a.summary,
+      detail: a.detail,
+      description: a.status
+    })),
     { title: 'Active Assumptions' }
   );
-  
+
   if (selected) {
-    vscode.window.showInformationMessage(selected.detail);
+    vscode.window.showInformationMessage(selected.detail ?? '');
   }
 }
 

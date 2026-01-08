@@ -3,9 +3,10 @@
  * Generates tests, runs test suites, reports coverage
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle, FileChange } from '../types';
-import { logger } from '../utils';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle, FileChange } from '../types';
+import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 
 const TESTER_SYSTEM_PROMPT = `You are the Tester Agent for Ender, an AI coding assistant.
 
@@ -23,43 +24,46 @@ OUTPUT TEST CODE:
 
 export class TesterAgent extends BaseAgent {
   constructor() {
-    super('tester', TESTER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'tester',
+      model: 'claude-sonnet-4-5-20250929',
+      systemPrompt: TESTER_SYSTEM_PROMPT,
+      capabilities: ['test_generation', 'coverage_analysis'],
+      maxTokens: 4096
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { filesToTest?: string[] }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context } = params;
     const startTime = Date.now();
 
     try {
-      const prompt = this.buildPrompt(task, options?.filesToTest ?? [], context);
-      const response = await this.callApi({ content: prompt, context, maxTokens: 4000 });
+      const prompt = this.buildPrompt(task, [], context);
+      const response = await this.callApi({
+        model: this.defaultModel,
+        system: this.buildSystemPrompt(context),
+        messages: this.buildMessages(prompt, context),
+        maxTokens: this.maxTokens,
+        metadata: { agent: 'tester', taskId: generateId() }
+      });
 
       // Extract test files from response
       const testFiles = this.extractTestFiles(response.content);
 
-      return {
-        success: true,
-        agent: 'tester',
-        output: response.content,
+      return this.createSuccessResult(response.content, {
         files: testFiles,
         explanation: `Generated ${testFiles.length} test file(s)`,
         confidence: 85,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Tester failed', 'Tester', { error });
-      return {
-        success: false,
-        agent: 'tester',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'TEST_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 

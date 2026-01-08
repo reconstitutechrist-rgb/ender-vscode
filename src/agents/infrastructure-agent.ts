@@ -3,9 +3,10 @@
  * Handles environment configs, Docker, cloud services, CI/CD
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle, FileChange, ValidationResult, ValidationIssue } from '../types';
-import { logger } from '../utils';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle, FileChange, ValidationResult, ValidationIssue } from '../types';
+import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 
 const INFRASTRUCTURE_AGENT_SYSTEM_PROMPT = `You are the Infrastructure Agent for Ender, an AI coding assistant.
 
@@ -27,51 +28,52 @@ WHAT YOU CHECK:
 
 export class InfrastructureAgent extends BaseAgent {
   constructor() {
-    super('infrastructure-agent', INFRASTRUCTURE_AGENT_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'infrastructure-agent',
+      model: 'claude-opus-4-5-20251101',
+      systemPrompt: INFRASTRUCTURE_AGENT_SYSTEM_PROMPT,
+      capabilities: ['docker_validation', 'cloud_config', 'secrets_detection'],
+      maxTokens: 4096
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { changes?: FileChange[]; validateOnly?: boolean }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context, files } = params;
     const startTime = Date.now();
 
     try {
-      if (options?.validateOnly) {
-        const validationResults = await this.validateInfrastructure(options.changes ?? [], context);
-        return {
-          success: validationResults.every(r => r.passed),
-          agent: 'infrastructure-agent',
-          output: JSON.stringify(validationResults, null, 2),
+      // Validate infrastructure in files if provided
+      if (files && files.length > 0) {
+        const validationResults = await this.validateInfrastructure(files, context);
+        return this.createSuccessResult(JSON.stringify(validationResults, null, 2), {
           explanation: this.formatValidationExplanation(validationResults),
           confidence: 85,
           tokensUsed: { input: 0, output: 0 },
-          duration: Date.now() - startTime
-        };
+          startTime
+        });
       }
 
-      const response = await this.callApi({ content: this.buildPrompt(task, context), context });
+      const response = await this.callApi({
+        model: this.defaultModel,
+        system: this.buildSystemPrompt(context),
+        messages: this.buildMessages(this.buildInfraPrompt(task, context), context),
+        maxTokens: this.maxTokens,
+        metadata: { agent: 'infrastructure-agent', taskId: generateId() }
+      });
 
-      return {
-        success: true,
-        agent: 'infrastructure-agent',
-        output: response.content,
+      return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 85,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Infrastructure Agent failed', 'InfrastructureAgent', { error });
-      return {
-        success: false,
-        agent: 'infrastructure-agent',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'INFRA_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
@@ -262,9 +264,9 @@ export class InfrastructureAgent extends BaseAgent {
     return issues;
   }
 
-  private buildPrompt(task: string, context: ContextBundle): string {
+  private buildInfraPrompt(task: string, context: ContextBundle): string {
     let prompt = `## Infrastructure Task\n${task}\n\n`;
-    
+
     if (context.relevantFiles.length > 0) {
       prompt += '## Relevant Files\n';
       context.relevantFiles.forEach(f => {

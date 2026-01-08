@@ -211,6 +211,37 @@ export class StatusBarProvider {
   }
 
   /**
+   * Initialize the status bar - shows it and sets idle state
+   */
+  initialize(): void {
+    this.show();
+    this.setIdle();
+  }
+
+  /**
+   * Set status with a unified status type
+   */
+  setStatus(status: 'idle' | 'working' | 'waiting' | 'error' | 'success', message?: string): void {
+    switch (status) {
+      case 'idle':
+        this.setIdle();
+        break;
+      case 'working':
+        this.setWorking((message as AgentType) || 'conductor');
+        break;
+      case 'waiting':
+        this.setWaitingApproval();
+        break;
+      case 'error':
+        this.setError(message);
+        break;
+      case 'success':
+        this.setSuccess(message);
+        break;
+    }
+  }
+
+  /**
    * Dispose resources
    */
   dispose(): void {

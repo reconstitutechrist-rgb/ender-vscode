@@ -3,9 +3,10 @@
  * Manages third-party APIs, webhooks, authentication flows
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle, FileChange, ValidationResult, ValidationIssue } from '../types';
-import { logger } from '../utils';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle, FileChange, ValidationResult, ValidationIssue } from '../types';
+import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 
 const INTEGRATIONS_AGENT_SYSTEM_PROMPT = `You are the Integrations Agent for Ender, an AI coding assistant.
 
@@ -29,51 +30,52 @@ WHAT YOU CHECK:
 
 export class IntegrationsAgent extends BaseAgent {
   constructor() {
-    super('integrations-agent', INTEGRATIONS_AGENT_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'integrations-agent',
+      model: 'claude-opus-4-5-20251101',
+      systemPrompt: INTEGRATIONS_AGENT_SYSTEM_PROMPT,
+      capabilities: ['api_integration', 'auth_validation', 'webhook_security'],
+      maxTokens: 4096
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { changes?: FileChange[]; validateOnly?: boolean }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context, files } = params;
     const startTime = Date.now();
 
     try {
-      if (options?.validateOnly) {
-        const validationResults = await this.validateIntegrations(options.changes ?? [], context);
-        return {
-          success: validationResults.every(r => r.passed),
-          agent: 'integrations-agent',
-          output: JSON.stringify(validationResults, null, 2),
+      // Validate integrations in files if provided
+      if (files && files.length > 0) {
+        const validationResults = await this.validateIntegrations(files, context);
+        return this.createSuccessResult(JSON.stringify(validationResults, null, 2), {
           explanation: this.formatValidationExplanation(validationResults),
           confidence: 85,
           tokensUsed: { input: 0, output: 0 },
-          duration: Date.now() - startTime
-        };
+          startTime
+        });
       }
 
-      const response = await this.callApi({ content: this.buildPrompt(task, context), context });
+      const response = await this.callApi({
+        model: this.defaultModel,
+        system: this.buildSystemPrompt(context),
+        messages: this.buildMessages(this.buildIntegrationPrompt(task, context), context),
+        maxTokens: this.maxTokens,
+        metadata: { agent: 'integrations-agent', taskId: generateId() }
+      });
 
-      return {
-        success: true,
-        agent: 'integrations-agent',
-        output: response.content,
+      return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 85,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Integrations Agent failed', 'IntegrationsAgent', { error });
-      return {
-        success: false,
-        agent: 'integrations-agent',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'INTEGRATIONS_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
@@ -198,9 +200,9 @@ export class IntegrationsAgent extends BaseAgent {
     return issues;
   }
 
-  private buildPrompt(task: string, context: ContextBundle): string {
+  private buildIntegrationPrompt(task: string, context: ContextBundle): string {
     let prompt = `## Integration Task\n${task}\n\n`;
-    
+
     if (context.relevantFiles.length > 0) {
       prompt += '## Relevant Files\n';
       context.relevantFiles.forEach(f => {

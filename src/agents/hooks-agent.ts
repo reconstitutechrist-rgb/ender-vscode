@@ -3,9 +3,10 @@
  * Specializes in framework hooks, lifecycle, event systems, middleware
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle, FileChange, ValidationResult, ValidationIssue } from '../types';
-import { logger } from '../utils';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle, FileChange, ValidationResult, ValidationIssue } from '../types';
+import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 
 const HOOKS_AGENT_SYSTEM_PROMPT = `You are the Hooks Agent for Ender, an AI coding assistant.
 
@@ -32,52 +33,53 @@ CRITICAL RULES:
 
 export class HooksAgent extends BaseAgent {
   constructor() {
-    super('hooks-agent', HOOKS_AGENT_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'hooks-agent',
+      model: 'claude-opus-4-5-20251101',
+      systemPrompt: HOOKS_AGENT_SYSTEM_PROMPT,
+      capabilities: ['hook_validation', 'lifecycle_analysis', 'event_cleanup'],
+      maxTokens: 4096
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { changes?: FileChange[]; validateOnly?: boolean }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context, files } = params;
     const startTime = Date.now();
 
     try {
-      if (options?.validateOnly) {
-        const validationResults = await this.validateHooks(options.changes ?? [], context);
-        return {
-          success: validationResults.every(r => r.passed),
-          agent: 'hooks-agent',
-          output: JSON.stringify(validationResults, null, 2),
+      // Validate hooks in files if provided
+      if (files && files.length > 0) {
+        const validationResults = await this.validateHooks(files, context);
+        return this.createSuccessResult(JSON.stringify(validationResults, null, 2), {
           explanation: this.formatValidationExplanation(validationResults),
           confidence: 90,
           tokensUsed: { input: 0, output: 0 },
-          duration: Date.now() - startTime
-        };
+          startTime
+        });
       }
 
       // Generate hook-related code or fixes
-      const response = await this.callApi({ content: this.buildPrompt(task, context), context });
+      const response = await this.callApi({
+        model: this.defaultModel,
+        system: this.buildSystemPrompt(context),
+        messages: this.buildMessages(this.buildHooksPrompt(task, context), context),
+        maxTokens: this.maxTokens,
+        metadata: { agent: 'hooks-agent', taskId: generateId() }
+      });
 
-      return {
-        success: true,
-        agent: 'hooks-agent',
-        output: response.content,
+      return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 85,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Hooks Agent failed', 'HooksAgent', { error });
-      return {
-        success: false,
-        agent: 'hooks-agent',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'HOOKS_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
@@ -225,7 +227,7 @@ export class HooksAgent extends BaseAgent {
     return issues;
   }
 
-  private buildPrompt(task: string, context: ContextBundle): string {
+  private buildHooksPrompt(task: string, context: ContextBundle): string {
     let prompt = `## Hooks/Lifecycle Task\n${task}\n\n`;
     
     if (context.relevantFiles.length > 0) {

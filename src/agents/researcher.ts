@@ -3,10 +3,10 @@
  * Fetches external documentation via Context7
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle } from '../types';
-import { logger } from '../utils';
-import { context7Client } from '../api';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle } from '../types';
+import { logger, generateId } from '../utils';
+import { context7Client, apiClient } from '../api';
 
 const RESEARCHER_SYSTEM_PROMPT = `You are the Researcher Agent for Ender, an AI coding assistant.
 
@@ -18,42 +18,45 @@ YOUR ROLE:
 
 export class ResearcherAgent extends BaseAgent {
   constructor() {
-    super('researcher', RESEARCHER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'researcher',
+      model: 'claude-sonnet-4-5-20250929',
+      systemPrompt: RESEARCHER_SYSTEM_PROMPT,
+      capabilities: ['documentation_lookup', 'api_reference'],
+      maxTokens: 4096
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { libraries?: string[] }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context } = params;
     const startTime = Date.now();
 
     try {
       // Fetch documentation for relevant libraries
-      const docs = await this.fetchRelevantDocs(task, options?.libraries);
-      
-      const prompt = this.buildPrompt(task, docs, context);
-      const response = await this.callApi({ content: prompt, context, maxTokens: 3000 });
+      const docs = await this.fetchRelevantDocs(task);
 
-      return {
-        success: true,
-        agent: 'researcher',
-        output: response.content,
+      const prompt = this.buildResearchPrompt(task, docs, context);
+      const response = await this.callApi({
+        model: this.defaultModel,
+        system: this.buildSystemPrompt(context),
+        messages: this.buildMessages(prompt, context),
+        maxTokens: this.maxTokens,
+        metadata: { agent: 'researcher', taskId: generateId() }
+      });
+
+      return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 85,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Researcher failed', 'Researcher', { error });
-      return {
-        success: false,
-        agent: 'researcher',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'RESEARCH_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
@@ -81,7 +84,7 @@ export class ResearcherAgent extends BaseAgent {
     return [...new Set(matches.map(m => m.toLowerCase()))];
   }
 
-  private buildPrompt(task: string, docs: string[], context: ContextBundle): string {
+  private buildResearchPrompt(task: string, docs: string[], _context: ContextBundle): string {
     let prompt = `## Research Question\n${task}\n\n`;
     
     if (docs.length > 0) {

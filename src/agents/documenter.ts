@@ -3,9 +3,10 @@
  * Creates plain English explanations, code comments, documentation
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle, FileChange } from '../types';
-import { logger } from '../utils';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle, FileChange } from '../types';
+import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 
 const DOCUMENTER_SYSTEM_PROMPT = `You are the Documenter Agent for Ender, an AI coding assistant.
 
@@ -24,43 +25,46 @@ PRINCIPLES:
 
 export class DocumenterAgent extends BaseAgent {
   constructor() {
-    super('documenter', DOCUMENTER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'documenter',
+      model: 'claude-sonnet-4-5-20250929',
+      systemPrompt: DOCUMENTER_SYSTEM_PROMPT,
+      capabilities: ['documentation', 'explanation', 'commenting'],
+      maxTokens: 2048
+    };
+    super(config, apiClient);
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { changes?: FileChange[] }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context, files } = params;
     const startTime = Date.now();
 
     try {
-      const prompt = this.buildPrompt(task, options?.changes ?? [], context);
-      const response = await this.callApi({ content: prompt, context, maxTokens: 2000 });
+      const prompt = this.buildDocPrompt(task, files ?? [], context);
+      const response = await this.callApi({
+        model: this.defaultModel,
+        system: this.buildSystemPrompt(context),
+        messages: this.buildMessages(prompt, context),
+        maxTokens: this.maxTokens,
+        metadata: { agent: 'documenter', taskId: generateId() }
+      });
 
-      return {
-        success: true,
-        agent: 'documenter',
-        output: response.content,
+      return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 90,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Documenter failed', 'Documenter', { error });
-      return {
-        success: false,
-        agent: 'documenter',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'DOC_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
-  private buildPrompt(task: string, changes: FileChange[], context: ContextBundle): string {
+  private buildDocPrompt(task: string, changes: FileChange[], _context: ContextBundle): string {
     let prompt = `## Task\n${task}\n\n`;
     
     if (changes.length > 0) {

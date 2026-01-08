@@ -6,16 +6,14 @@
 import { AnthropicClient, ChatParams, ChatResponse } from '../api/anthropic-client';
 import { modelRouter, RoutingContext } from '../api/model-router';
 import { requestQueue } from '../api/request-queue';
-import { logger, generateId } from '../utils';
+import { logger } from '../utils';
 import type {
   AgentType,
   AgentConfig,
   AgentResult,
-  AgentError,
   ContextBundle,
   ModelId,
   TaskType,
-  ConversationMessage,
   FileChange,
   TokenUsage
 } from '../types';
@@ -308,7 +306,7 @@ Description: ${currentPhase.description}`;
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
-      const language = match[1] || '';
+      // const _language = match[1] || ''; // Reserved for future use
       const filePath = match[2]?.trim() || '';
       const code = match[3] || '';
 
@@ -358,21 +356,22 @@ Description: ${currentPhase.description}`;
       nextAgent?: AgentType;
     }
   ): AgentResult {
-    return {
+    const result: AgentResult = {
       success: true,
       agent: this.type,
       output,
-      files: options.files,
-      explanation: options.explanation,
       confidence: options.confidence ?? 85,
       tokensUsed: {
         input: options.tokensUsed.input,
         output: options.tokensUsed.output
       },
-      duration: Date.now() - options.startTime,
-      warnings: options.warnings,
-      nextAgent: options.nextAgent
+      duration: Date.now() - options.startTime
     };
+    if (options.files) { result.files = options.files; }
+    if (options.explanation) { result.explanation = options.explanation; }
+    if (options.warnings) { result.warnings = options.warnings; }
+    if (options.nextAgent) { result.nextAgent = options.nextAgent; }
+    return result;
   }
 
   /**

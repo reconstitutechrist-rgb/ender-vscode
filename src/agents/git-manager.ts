@@ -3,9 +3,10 @@
  * Handles commits, branches, merges, conflict resolution
  */
 
-import { BaseAgent } from './base-agent';
-import type { AgentResult, ContextBundle, FileChange } from '../types';
-import { logger } from '../utils';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
+import type { AgentConfig, AgentResult, ContextBundle, FileChange } from '../types';
+import { logger, generateId } from '../utils';
+import { apiClient } from '../api';
 import * as cp from 'child_process';
 import * as util from 'util';
 
@@ -28,64 +29,54 @@ export class GitManagerAgent extends BaseAgent {
   private workspacePath: string = '';
 
   constructor() {
-    super('git-manager', GIT_MANAGER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'git-manager',
+      model: 'claude-sonnet-4-5-20250929',
+      systemPrompt: GIT_MANAGER_SYSTEM_PROMPT,
+      capabilities: ['commit_generation', 'branch_management', 'git_operations'],
+      maxTokens: 2048
+    };
+    super(config, apiClient);
   }
 
   setWorkspace(path: string): void {
     this.workspacePath = path;
   }
 
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: { changes?: FileChange[]; action?: 'commit' | 'branch' | 'merge' | 'status' }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context, files } = params;
     const startTime = Date.now();
 
     try {
-      let result: string;
+      // Default to generating git advice
+      const result = await this.generateGitAdvice(task, context, files ?? []);
 
-      switch (options?.action) {
-        case 'commit':
-          result = await this.handleCommit(options.changes ?? [], context);
-          break;
-        case 'branch':
-          result = await this.handleBranch(task);
-          break;
-        case 'status':
-          result = await this.getStatus();
-          break;
-        default:
-          result = await this.generateGitAdvice(task, context);
-      }
-
-      return {
-        success: true,
-        agent: 'git-manager',
-        output: result,
+      return this.createSuccessResult(result, {
         explanation: result,
         confidence: 90,
         tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime
-      };
+        startTime
+      });
     } catch (error) {
       logger.error('Git Manager failed', 'GitManager', { error });
-      return {
-        success: false,
-        agent: 'git-manager',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{ code: 'GIT_ERROR', message: String(error), recoverable: true }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
   private async handleCommit(changes: FileChange[], context: ContextBundle): Promise<string> {
     // Generate commit message using AI
     const prompt = this.buildCommitPrompt(changes);
-    const response = await this.callApi({ content: prompt, context, maxTokens: 500 });
-    
+    const response = await this.callApi({
+      model: this.defaultModel,
+      system: this.buildSystemPrompt(context),
+      messages: this.buildMessages(prompt, context),
+      maxTokens: 500,
+      metadata: { agent: 'git-manager', taskId: generateId() }
+    });
+
     const message = this.extractCommitMessage(response.content);
     return `Generated commit message:\n\n${message}`;
   }
@@ -133,9 +124,15 @@ export class GitManagerAgent extends BaseAgent {
     }
   }
 
-  private async generateGitAdvice(task: string, context: ContextBundle): Promise<string> {
+  private async generateGitAdvice(task: string, context: ContextBundle, _files: FileChange[]): Promise<string> {
     const prompt = `Git operation request: ${task}\n\nProvide the appropriate git commands.`;
-    const response = await this.callApi({ content: prompt, context, maxTokens: 500 });
+    const response = await this.callApi({
+      model: this.defaultModel,
+      system: this.buildSystemPrompt(context),
+      messages: this.buildMessages(prompt, context),
+      maxTokens: 500,
+      metadata: { agent: 'git-manager', taskId: generateId() }
+    });
     return response.content;
   }
 
