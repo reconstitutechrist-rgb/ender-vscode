@@ -58,6 +58,7 @@ export interface ContextBundle {
   projectSettings: ProjectSettings;
   assumptions?: Assumption[];
   instructions?: TrackedInstruction[];
+  projectPath?: string;
 }
 
 export interface FileContent {

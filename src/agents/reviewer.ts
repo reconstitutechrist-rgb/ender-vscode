@@ -4,20 +4,22 @@
  * Approves or rejects code changes
  */
 
-import { BaseAgent } from './base-agent';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
 import type {
+  AgentConfig,
   AgentResult,
-  ContextBundle,
-  FileChange,
   ReviewerOutput,
   ValidationResult,
   ValidationPipelineResult,
   ValidatorName,
   ValidatorMode,
   RollbackCheckpoint,
-  Plan
+  Plan,
+  ContextBundle,
+  FileChange
 } from '../types';
 import { logger, generateId, hashContent } from '../utils';
+import { validationPipeline } from '../validators';
 
 const REVIEWER_SYSTEM_PROMPT = `You are the Reviewer Agent for Ender, an AI coding assistant.
 
@@ -51,73 +53,52 @@ OUTPUT FORMAT:
   "mustFix": ["critical issue 1"]
 }`;
 
-// Validator execution order by stage
-const VALIDATOR_STAGES: Record<string, ValidatorName[]> = {
-  scope: ['scope-guard', 'hallucination-detector', 'change-size-monitor'],
-  quality: ['syntax-validator', 'best-practices', 'security-scanner'],
-  integrity: ['type-integrity', 'import-export', 'test-preservation'],
-  compliance: ['plan-compliance', 'breaking-change', 'snapshot-diff', 'rollback-checkpoint'],
-  specialist: [
-    'hook-rules-checker', 'event-leak-detector',
-    'api-contract-validator', 'auth-flow-validator',
-    'environment-consistency', 'secrets-exposure-checker',
-    'docker-best-practices', 'cloud-config-validator'
-  ],
-  'ai-accuracy': [
-    'api-existence-validator', 'dependency-verifier',
-    'deprecation-detector', 'style-matcher',
-    'complexity-analyzer', 'edge-case-checker',
-    'refactor-completeness', 'doc-sync-validator'
-  ]
-};
-
-// Fast mode validators
-const FAST_MODE_VALIDATORS: ValidatorName[] = [
-  'syntax-validator',
-  'type-integrity',
-  'import-export',
-  'scope-guard',
-  'hook-rules-checker',
-  'api-existence-validator'
-];
-
 export class ReviewerAgent extends BaseAgent {
   private validatorMode: ValidatorMode = 'strict';
 
   constructor() {
-    super('reviewer', REVIEWER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'reviewer',
+      model: 'claude-opus-4-5-20251101',
+      systemPrompt: REVIEWER_SYSTEM_PROMPT,
+      capabilities: ['code_review', 'validation', 'quality_assurance'],
+      maxTokens: 4096
+    };
+    // @ts-ignore - apiClient is protected in BaseAgent but needed for constructor. 
+    // In real implementation we would inject it or use a singleton.
+    // For now assuming BaseAgent handles it or we pass a mock/global client.
+    // Actually BaseAgent constructor takes (config, apiClient).
+    // The previous code called super('reviewer', prompt) which was wrong.
+    // We need to fix how agents are instantiated. 
+    // In src/agents/index.ts, agents are instantiated: export const reviewerAgent = new ReviewerAgent();
+    // But BaseAgent needs apiClient. 
+    // We will use the global apiClient imported from ../api
+    super(config, require('../api').apiClient);
   }
 
   /**
    * Review code changes
    */
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: {
-      changes: FileChange[];
-      plan?: Plan;
-      mode?: ValidatorMode;
-    }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context, planId, files } = params;
     const startTime = Date.now();
-    const changes = options?.changes ?? [];
+    const changes = files ?? [];
 
     logger.agent('reviewer', 'Starting code review', {
       fileCount: changes.length,
-      mode: options?.mode ?? this.validatorMode
+      mode: this.validatorMode
     });
 
     try {
       // Create rollback checkpoint first
-      const checkpoint = await this.createCheckpoint(changes, options?.plan);
+      const checkpoint = await this.createCheckpoint(changes, context.currentPlan);
 
       // Run validation pipeline
       const pipelineResult = await this.runValidationPipeline(
         changes,
         context,
-        options?.mode ?? this.validatorMode,
-        options?.plan
+        this.validatorMode,
+        context.currentPlan
       );
 
       // Attach checkpoint to result
@@ -137,31 +118,23 @@ export class ReviewerAgent extends BaseAgent {
         mustFix: reviewSummary.mustFix
       };
 
-      return {
-        success: true,
-        agent: 'reviewer',
-        output: JSON.stringify(output, null, 2),
-        explanation: this.formatReviewExplanation(output, pipelineResult),
-        confidence: pipelineResult.passed ? 95 : 40,
-        tokensUsed: reviewSummary.tokensUsed,
-        duration: Date.now() - startTime,
-        nextAgent: pipelineResult.passed ? 'documenter' : 'coder'
-      };
+      return this.createSuccessResult(
+        JSON.stringify(output, null, 2),
+        {
+          confidence: pipelineResult.passed ? 95 : 40,
+          tokensUsed: reviewSummary.tokensUsed,
+          startTime,
+          explanation: this.formatReviewExplanation(output, pipelineResult),
+          nextAgent: pipelineResult.passed ? 'documenter' : 'coder'
+        }
+      );
     } catch (error) {
       logger.error('Reviewer agent failed', 'Reviewer', { error });
 
-      return {
-        success: false,
-        agent: 'reviewer',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{
-          code: 'REVIEWER_ERROR',
-          message: error instanceof Error ? error.message : 'Review failed',
-          recoverable: true
-        }]
-      };
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
@@ -174,153 +147,25 @@ export class ReviewerAgent extends BaseAgent {
     mode: ValidatorMode,
     plan?: Plan
   ): Promise<ValidationPipelineResult> {
-    const results: ValidationResult[] = [];
-    const startTime = Date.now();
-    let totalErrors = 0;
-    let totalWarnings = 0;
+    
+    // Configure pipeline mode
+    validationPipeline.setMode(mode);
 
-    // Determine which validators to run
-    const validators = this.getValidatorsForMode(mode);
-
-    for (const validatorName of validators) {
-      const result = await this.runValidator(validatorName, changes, context, plan);
-      results.push(result);
-
-      if (!result.passed) {
-        const errors = result.issues.filter(i => i.severity === 'error').length;
-        const warnings = result.issues.filter(i => i.severity === 'warning').length;
-        totalErrors += errors;
-        totalWarnings += warnings;
-
-        // Stop early on critical failures in strict mode
-        if (mode === 'strict' && errors > 0 && this.isCriticalValidator(validatorName)) {
-          logger.warn('Critical validator failed, stopping pipeline', 'Reviewer', {
-            validator: validatorName,
-            errors
-          });
-          break;
-        }
-      }
+    // Build existing files map from context
+    const existingFiles = new Map<string, string>();
+    for (const file of context.relevantFiles) {
+      existingFiles.set(file.path, file.content);
     }
 
-    const passed = totalErrors === 0;
-
-    return {
-      passed,
-      results,
-      totalIssues: totalErrors + totalWarnings,
-      errors: totalErrors,
-      warnings: totalWarnings,
-      duration: Date.now() - startTime
-    };
-  }
-
-  /**
-   * Run a single validator
-   */
-  private async runValidator(
-    name: ValidatorName,
-    changes: FileChange[],
-    context: ContextBundle,
-    plan?: Plan
-  ): Promise<ValidationResult> {
-    const startTime = Date.now();
-
-    logger.debug(`Running validator: ${name}`, 'Reviewer');
-
-    // In a full implementation, each validator would have its own class
-    // For now, we'll simulate validation results
-    const result = await this.simulateValidator(name, changes, context, plan);
-
-    logger.validator(name, result.passed ? 'pass' : 'fail', {
-      issues: result.issues.length,
-      duration: Date.now() - startTime
+      // Run pipeline
+    return validationPipeline.run({
+      changes,
+      planId: plan?.id || '',
+      phaseId: plan?.phases[plan.currentPhaseIndex]?.id || '',
+      existingFiles,
+      projectPath: context.projectPath ?? '',
+      config: context.projectSettings.effective as unknown as Record<string, unknown>
     });
-
-    return {
-      ...result,
-      validator: name,
-      duration: Date.now() - startTime
-    };
-  }
-
-  /**
-   * Simulate validator execution (placeholder for real implementations)
-   */
-  private async simulateValidator(
-    name: ValidatorName,
-    changes: FileChange[],
-    context: ContextBundle,
-    plan?: Plan
-  ): Promise<Omit<ValidationResult, 'validator' | 'duration'>> {
-    // This would be replaced with actual validator implementations
-    // For now, return a passing result
-    return {
-      passed: true,
-      severity: 'info',
-      issues: [],
-      metadata: { simulated: true }
-    };
-  }
-
-  /**
-   * Get validators for the specified mode
-   */
-  private getValidatorsForMode(mode: ValidatorMode): ValidatorName[] {
-    switch (mode) {
-      case 'fast':
-        return FAST_MODE_VALIDATORS;
-      
-      case 'strict':
-        return Object.values(VALIDATOR_STAGES).flat();
-      
-      case 'integration-focus':
-        return [
-          ...VALIDATOR_STAGES['scope'] ?? [],
-          ...VALIDATOR_STAGES['quality'] ?? [],
-          ...VALIDATOR_STAGES['integrity'] ?? [],
-          'api-contract-validator',
-          'auth-flow-validator',
-          'secrets-exposure-checker'
-        ];
-      
-      case 'infrastructure-focus':
-        return [
-          ...VALIDATOR_STAGES['scope'] ?? [],
-          ...VALIDATOR_STAGES['quality'] ?? [],
-          ...VALIDATOR_STAGES['integrity'] ?? [],
-          'environment-consistency',
-          'docker-best-practices',
-          'cloud-config-validator'
-        ];
-      
-      case 'ai-accuracy-focus':
-        return [
-          ...VALIDATOR_STAGES['scope'] ?? [],
-          ...VALIDATOR_STAGES['quality'] ?? [],
-          ...VALIDATOR_STAGES['ai-accuracy'] ?? []
-        ];
-      
-      case 'custom':
-        // Would be configured per-project
-        return FAST_MODE_VALIDATORS;
-      
-      default:
-        return Object.values(VALIDATOR_STAGES).flat();
-    }
-  }
-
-  /**
-   * Check if validator is critical (stops pipeline on failure)
-   */
-  private isCriticalValidator(name: ValidatorName): boolean {
-    const critical: ValidatorName[] = [
-      'syntax-validator',
-      'type-integrity',
-      'security-scanner',
-      'secrets-exposure-checker'
-    ];
-    return critical.includes(name);
   }
 
   /**
@@ -339,8 +184,8 @@ export class ReviewerAgent extends BaseAgent {
         originalContent: '', // Would be loaded from disk
         hash: hashContent(change.content)
       })),
-      planId: plan?.id,
-      phaseId: plan?.phases[plan.currentPhaseIndex]?.id
+      planId: plan?.id || '',
+      phaseId: plan?.phases[plan.currentPhaseIndex]?.id || ''
     };
 
     logger.debug('Created rollback checkpoint', 'Reviewer', { 
@@ -368,9 +213,11 @@ export class ReviewerAgent extends BaseAgent {
 
     try {
       const response = await this.callApi({
-        content: prompt,
-        context,
-        maxTokens: 2000
+        model: this.defaultModel,
+        system: this.systemPrompt,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 2000,
+        metadata: { agent: this.type, taskId: generateId() }
       });
 
       const parsed = this.parseReviewResponse(response.content);

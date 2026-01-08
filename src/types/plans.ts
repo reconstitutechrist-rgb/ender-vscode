@@ -51,7 +51,9 @@ export interface PlanTask {
   targetFunction?: string;
   expectedChanges?: string;
   actualChanges?: string;
+  startedAt?: Date;
   completedAt?: Date;
+  error?: string;
 }
 
 export interface PlanMetadata {

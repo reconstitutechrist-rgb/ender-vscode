@@ -3,14 +3,22 @@
  * AI Coding Assistant with 14 specialized agents and 29 validators
  */
 
+// TextDecoder is available in VS Code runtime
+declare const TextDecoder: {
+  new (encoding?: string): { decode(input: Uint8Array): string };
+};
+
 import * as vscode from 'vscode';
 import { logger } from './utils';
 import { apiClient } from './api';
 import { memoryManager } from './memory';
-import { conductorAgent } from './agents';
+import { conductorAgent, agentRegistry } from './agents';
+import { contextAssembler } from './context/context-assembler';
+import { fileRelevanceScorer, FileRelevanceScorer } from './context/file-relevance';
+import { sqliteClient } from './storage';
 import { ChatPanelProvider, StatusBarProvider, TaskPanelProvider, MemoryTreeProvider, InstructionTreeProvider } from './ui/providers';
 import { SessionRecoveryManager } from './recovery';
-import type { ExtensionState } from './types';
+import type { ExtensionState, AgentType, ConductorDecision, AgentResult } from './types';
 
 let extensionState: ExtensionState;
 let statusBar: StatusBarProvider;
@@ -141,7 +149,9 @@ async function initializeWorkspace(workspacePath: string): Promise<void> {
  */
 async function initializeUI(context: vscode.ExtensionContext): Promise<void> {
   // Register chat panel provider
-  chatProvider = new ChatPanelProvider(context.extensionUri);
+  chatProvider = new ChatPanelProvider(context.extensionUri, (message) => {
+    handleUserMessage(message);
+  });
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('ender.chat', chatProvider)
   );
@@ -305,10 +315,19 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
 }
 
 /**
+ * Handle user message from chat
+ */
+async function handleUserMessage(message: string): Promise<void> {
+  chatProvider.addUserMessage(message);
+  await handleNewTask(message);
+}
+
+/**
  * Handle new task
  */
 async function handleNewTask(task: string): Promise<void> {
   if (!extensionState.apiKeyConfigured) {
+    chatProvider.addAssistantMessage('Please configure your API key in settings to use Ender.');
     const action = await vscode.window.showErrorMessage(
       'API key not configured',
       'Configure API Key'
@@ -323,33 +342,214 @@ async function handleNewTask(task: string): Promise<void> {
   
   try {
     statusBar.setStatus('working', 'Processing task...');
+    chatProvider.setProcessing(true);
     
-    // Route through conductor
-    // In full implementation, this would be a more complex orchestration
-    vscode.window.showInformationMessage(`Task received: ${task.slice(0, 50)}...`);
+    // Assemble context
+    const relevantFiles = await getRelevantFiles(task);
+    const context = await contextAssembler.assemble({
+      relevantFiles,
+      activeMemory: await memoryManager.getHotMemories(),
+      conversationHistory: chatProvider.getMessages(),
+      projectSettings: {
+        effective: {
+          verbosity: 'normal',
+          codingStyle: 'functional',
+          commentLevel: 'moderate',
+          customRules: []
+        },
+        source: 'default'
+      },
+      projectPath: extensionState.workspaceFolder
+    });
+
+    // Execute Conductor
+    const conductorResult = await conductorAgent.execute({
+      task,
+      context
+    });
+
+    if (!conductorResult.success) {
+      throw new Error(conductorResult.errors?.[0]?.message || 'Conductor failed');
+    }
+
+    // Parse decision
+    let decision: ConductorDecision & { directResponse?: string };
+    try {
+      decision = JSON.parse(conductorResult.output);
+    } catch {
+      // Fallback if output is not JSON
+      chatProvider.addAssistantMessage(conductorResult.output, 'conductor');
+      return;
+    }
+
+    // Handle direct response
+    if (decision.directResponse) {
+      chatProvider.addAssistantMessage(decision.directResponse, 'conductor');
+      return;
+    }
+
+    // Handle agent routing
+    if (decision.selectedAgents && decision.selectedAgents.length > 0) {
+      chatProvider.addAssistantMessage(
+        `I'll have ${decision.selectedAgents.join(', ')} handle this. ${decision.routingReason}`, 
+        'conductor'
+      );
+
+      for (const agentType of decision.selectedAgents) {
+        const agent = agentRegistry[agentType as AgentType];
+        if (!agent) {
+          logger.warn(`Unknown agent type: ${agentType}`, 'Extension');
+          continue;
+        }
+
+        chatProvider.setCurrentAgent(agentType as AgentType);
+        
+        const agentResult = await agent.execute({
+          task,
+          context
+        });
+
+        if (agentResult.success) {
+          chatProvider.addAssistantMessage(agentResult.output, agentType as AgentType);
+          
+          if (agentResult.files) {
+             // Handle file changes (apply or show diff)
+             // For now, we just notify
+             vscode.window.showInformationMessage(`Agent ${agentType} proposed ${agentResult.files.length} changes`);
+          }
+        } else {
+          chatProvider.addAssistantMessage(
+            `I encountered an error: ${agentResult.errors?.[0]?.message}`, 
+            agentType as AgentType
+          );
+        }
+      }
+    } else {
+      chatProvider.addAssistantMessage(conductorResult.output, 'conductor');
+    }
     
   } catch (error) {
     logger.error('Task failed', 'Extension', { error });
-    vscode.window.showErrorMessage(`Task failed: ${error}`);
+    chatProvider.addAssistantMessage(`Error: ${error instanceof Error ? error.message : String(error)}`, 'system');
   } finally {
     statusBar.setStatus('ready');
+    chatProvider.setProcessing(false);
+    chatProvider.setCurrentAgent(null);
   }
+}
+
+/**
+ * Get relevant files for a task using smart file selection
+ */
+async function getRelevantFiles(task: string, limit: number = 15): Promise<import('./types').FileContent[]> {
+  if (!extensionState.workspaceFolder) {
+    return [];
+  }
+
+  try {
+    // Find source files in the workspace
+    const files = await vscode.workspace.findFiles(
+      '**/*.{ts,tsx,js,jsx,py,go,java,rs,rb,php,vue,svelte}',
+      '**/node_modules/**',
+      100
+    );
+
+    // Read file contents
+    const fileContents: import('./types').FileContent[] = [];
+
+    for (const uri of files.slice(0, 50)) {
+      try {
+        const content = await vscode.workspace.fs.readFile(uri);
+        const stat = await vscode.workspace.fs.stat(uri);
+        const relativePath = vscode.workspace.asRelativePath(uri);
+
+        fileContents.push({
+          path: relativePath,
+          content: new TextDecoder('utf-8').decode(content),
+          language: getLanguageFromPath(uri.fsPath),
+          lastModified: new Date(stat.mtime)
+        });
+      } catch {
+        // Skip files that can't be read
+      }
+    }
+
+    // Build scoring context
+    const scoringContext = {
+      query: task,
+      recentMessages: chatProvider.getMessages().slice(-5),
+      imports: FileRelevanceScorer.buildImportMap(fileContents)
+    };
+
+    // Get most relevant files
+    return fileRelevanceScorer.getMostRelevant(fileContents, scoringContext, limit);
+  } catch (error) {
+    logger.error('Failed to get relevant files', 'Extension', { error });
+    return [];
+  }
+}
+
+/**
+ * Get language identifier from file path
+ */
+function getLanguageFromPath(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  const langMap: Record<string, string> = {
+    'ts': 'typescript',
+    'tsx': 'typescriptreact',
+    'js': 'javascript',
+    'jsx': 'javascriptreact',
+    'py': 'python',
+    'go': 'go',
+    'java': 'java',
+    'rs': 'rust',
+    'rb': 'ruby',
+    'php': 'php',
+    'vue': 'vue',
+    'svelte': 'svelte'
+  };
+  return langMap[ext] || 'text';
 }
 
 /**
  * Handle undo
  */
 async function handleUndo(): Promise<void> {
-  // Implementation would use undo stack from storage
-  vscode.window.showInformationMessage('Undo: Not implemented yet');
+  const undoEntry = sqliteClient.popUndo();
+  if (!undoEntry) {
+    vscode.window.showInformationMessage('Nothing to undo');
+    return;
+  }
+  
+  // Restore files
+  for (const file of undoEntry.filesBefore) {
+    const uri = vscode.Uri.file(file.path);
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(file.content));
+  }
+  
+  vscode.window.showInformationMessage(`Undid: ${undoEntry.description}`);
 }
 
 /**
  * Handle rollback
  */
 async function handleRollback(): Promise<void> {
-  // Implementation would use rollback checkpoints
-  vscode.window.showInformationMessage('Rollback: Not implemented yet');
+  // In a full implementation, show a picker for checkpoints
+  const id = await vscode.window.showInputBox({ prompt: 'Enter Checkpoint ID' });
+  if (!id) return;
+
+  const checkpoint = sqliteClient.getCheckpoint(id);
+  if (!checkpoint) {
+    vscode.window.showErrorMessage('Checkpoint not found');
+    return;
+  }
+
+  for (const file of checkpoint.files) {
+    const uri = vscode.Uri.file(file.path);
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(file.content));
+  }
+  
+  vscode.window.showInformationMessage(`Rolled back to: ${checkpoint.description || id}`);
 }
 
 /**
@@ -402,8 +602,21 @@ async function handleImportMemory(): Promise<void> {
  * Show assumption log
  */
 async function showAssumptionLog(): Promise<void> {
-  // Implementation would show sanity checker's assumption log
-  vscode.window.showInformationMessage('Assumption log: Not implemented yet');
+  // Simple implementation using memory manager
+  const assumptions = await memoryManager.getMemoryEntries({ categories: ['known_issues'] }); // Approximation
+  if (assumptions.length === 0) {
+    vscode.window.showInformationMessage('No active assumptions tracked');
+    return;
+  }
+  
+  const selected = await vscode.window.showQuickPick(
+    assumptions.map(a => ({ label: a.summary, detail: a.detail, description: a.status })),
+    { title: 'Active Assumptions' }
+  );
+  
+  if (selected) {
+    vscode.window.showInformationMessage(selected.detail);
+  }
 }
 
 /**

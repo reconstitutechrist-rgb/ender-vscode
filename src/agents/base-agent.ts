@@ -27,6 +27,7 @@ export interface AgentExecuteParams {
   phaseId?: string;
   stream?: boolean;
   onProgress?: (content: string) => void;
+  files?: FileChange[];
 }
 
 export abstract class BaseAgent {
