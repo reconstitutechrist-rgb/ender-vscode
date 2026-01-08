@@ -4,9 +4,9 @@
  * Uses adaptive model selection (Sonnet for simple, Opus for complex)
  */
 
-import { BaseAgent } from './base-agent';
+import { BaseAgent, AgentExecuteParams } from './base-agent';
 import type {
-  AgentType,
+  AgentConfig,
   AgentResult,
   ContextBundle,
   FileChange,
@@ -16,7 +16,7 @@ import type {
   PlanTask
 } from '../types';
 import { logger, generateId } from '../utils';
-import { modelRouter } from '../api';
+import { apiClient } from '../api';
 
 const CODER_SYSTEM_PROMPT = `You are the Coder Agent for Ender, an AI coding assistant.
 
@@ -61,84 +61,88 @@ Provide your response as JSON:
 
 export class CoderAgent extends BaseAgent {
   constructor() {
-    super('coder', CODER_SYSTEM_PROMPT);
+    const config: AgentConfig = {
+      type: 'coder',
+      model: 'claude-sonnet-4-5-20250929',
+      systemPrompt: CODER_SYSTEM_PROMPT,
+      capabilities: ['code_writing', 'file_modification', 'plan_execution'],
+      maxTokens: 8192
+    };
+    super(config, apiClient);
   }
 
   /**
    * Execute a coding task
    */
-  async execute(
-    task: string,
-    context: ContextBundle,
-    options?: {
-      plan?: Plan;
-      phase?: PlanPhase;
-      targetTask?: PlanTask;
-    }
-  ): Promise<AgentResult> {
+  async execute(params: AgentExecuteParams): Promise<AgentResult> {
+    const { task, context } = params;
     const startTime = Date.now();
-    
-    logger.agent('coder', 'Starting coding task', { 
+
+    // Extract plan info from context
+    const plan = context.currentPlan;
+    const phase = plan?.phases[plan.currentPhaseIndex];
+
+    logger.agent('coder', 'Starting coding task', {
       task: task.slice(0, 100),
-      hasplan: !!options?.plan,
-      phase: options?.phase?.index
+      hasPlan: !!plan,
+      phase: phase?.index
     });
 
     try {
+      // Build options conditionally to satisfy exactOptionalPropertyTypes
+      const options: { plan?: Plan; phase?: PlanPhase } = {};
+      if (plan) { options.plan = plan; }
+      if (phase) { options.phase = phase; }
+
       // Determine model based on complexity
-      const routingDecision = modelRouter.route({
-        agent: 'coder',
-        taskType: this.determineTaskType(task, context, options),
-        content: task,
-        fileCount: context.relevantFiles.length,
-        complexity: this.estimateComplexity(task, options)
-      });
+      const taskType = this.determineTaskType(task, context, options);
+      const model = this.routeModel(taskType, context);
 
       // Build the prompt
       const prompt = this.buildCoderPrompt(task, context, options);
 
+      // Build messages
+      const messages = this.buildMessages(prompt, context);
+
+      // Build metadata conditionally
+      const metadata: { agent: 'coder'; taskId: string; planId?: string } = {
+        agent: 'coder',
+        taskId: generateId()
+      };
+      if (plan?.id) { metadata.planId = plan.id; }
+
       // Call API
       const response = await this.callApi({
-        content: prompt,
-        context,
-        model: routingDecision.model
+        model,
+        system: this.buildSystemPrompt(context),
+        messages,
+        maxTokens: this.maxTokens,
+        metadata
       });
 
       // Parse response
       const output = this.parseCoderOutput(response.content);
 
       // Validate output against plan
-      if (options?.phase) {
-        this.validateAgainstPlan(output, options.phase);
+      if (phase) {
+        this.validateAgainstPlan(output, phase);
       }
 
-      return {
-        success: true,
-        agent: 'coder',
-        output: output.explanation,
+      return this.createSuccessResult(output.explanation, {
         files: output.files,
         explanation: output.explanation,
-        confidence: output.confidence,
+        confidence: 85,
         tokensUsed: response.usage,
-        duration: Date.now() - startTime,
+        startTime,
         nextAgent: 'reviewer'
-      };
+      });
     } catch (error) {
       logger.error('Coder agent failed', 'Coder', { error, task: task.slice(0, 100) });
-      
-      return {
-        success: false,
-        agent: 'coder',
-        confidence: 0,
-        tokensUsed: { input: 0, output: 0 },
-        duration: Date.now() - startTime,
-        errors: [{
-          code: 'CODER_ERROR',
-          message: error instanceof Error ? error.message : 'Unknown error',
-          recoverable: true,
-          suggestion: 'Try breaking down the task into smaller pieces'
-        }]
-      };
+
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error(String(error)),
+        startTime
+      );
     }
   }
 
@@ -314,23 +318,6 @@ export class CoderAgent extends BaseAgent {
     }
 
     return 'multi_file_changes';
-  }
-
-  /**
-   * Estimate complexity
-   */
-  private estimateComplexity(
-    task: string,
-    options?: { plan?: Plan; phase?: PlanPhase }
-  ): 'low' | 'medium' | 'high' {
-    if (options?.plan?.estimatedComplexity) {
-      return options.plan.estimatedComplexity;
-    }
-
-    const taskLength = task.length;
-    if (taskLength > 1000) return 'high';
-    if (taskLength > 300) return 'medium';
-    return 'low';
   }
 
   /**

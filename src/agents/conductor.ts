@@ -5,6 +5,7 @@
 
 import { BaseAgent, AgentExecuteParams } from './base-agent';
 import { AnthropicClient } from '../api/anthropic-client';
+import { apiClient } from '../api';
 import { logger } from '../utils';
 import type {
   AgentConfig,
@@ -342,3 +343,5 @@ export class ConductorAgent extends BaseAgent {
     };
   }
 }
+
+export const conductorAgent = new ConductorAgent(apiClient);

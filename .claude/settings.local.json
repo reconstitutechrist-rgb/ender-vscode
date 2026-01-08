@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(cat:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: implement real functionality for placeholder components\n\nConvert 8 placeholder/MVP components to fully functional implementations:\n\n1. Sandbox Executor - Real code execution via child_process with timeout,\n   multi-language support \\(JS, TS, Python, Go, Ruby, PHP\\), output truncation\n2. Test Runner - Framework auto-detection \\(Jest, Vitest, Mocha\\), JSON parsing,\n   coverage support, timeout handling\n3. Inline Completion Provider - AI-powered ghost text using Claude Sonnet,\n   context gathering, caching with TTL, string/comment detection\n4. Safety Provider - Dynamic alert management with WebviewViewProvider,\n   VS Code notifications, beautiful dashboard UI\n5. Smart File Selection - FileRelevanceScorer integration, glob-based\n   discovery, language detection\n6. ContextBundle projectPath - Added to types for workspace path tracking\n7. Reviewer projectPath - Integration with validation pipeline\n8. Sanity Checker Type Checking - Full type verification with Levenshtein\n   distance suggestions, framework type recognition\n9. Plan Lock Allowed Functions - Function-level access control with\n   regex-based function extraction\n\nAlso includes:\n- Memory tiers system \\(hot/warm/cold\\)\n- Auto-memory triggers\n- Phase executor with fail-fast\n- Crash recovery manager\n- Completion tracker\n- Request alignment checker\n- File whitelist security\n- Dependency graph builder\n- Token counter utility\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run compile:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

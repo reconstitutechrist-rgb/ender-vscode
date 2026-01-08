@@ -5,6 +5,7 @@
 
 import { BaseAgent, AgentExecuteParams } from './base-agent';
 import { AnthropicClient } from '../api/anthropic-client';
+import { apiClient } from '../api';
 import { generateId } from '../utils';
 import type {
   AgentConfig,
@@ -355,3 +356,5 @@ export class PlannerAgent extends BaseAgent {
     return updatedPlan;
   }
 }
+
+export const plannerAgent = new PlannerAgent(apiClient);
