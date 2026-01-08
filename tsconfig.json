@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "module": "Node16",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "sourceMap": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node16",
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./*"],
+      "@agents/*": ["agents/*"],
+      "@validators/*": ["validators/*"],
+      "@memory/*": ["memory/*"],
+      "@storage/*": ["storage/*"],
+      "@api/*": ["api/*"],
+      "@ui/*": ["ui/*"],
+      "@context/*": ["context/*"],
+      "@plans/*": ["plans/*"],
+      "@security/*": ["security/*"],
+      "@types/*": ["types/*"],
+      "@utils/*": ["utils/*"],
+      "@sanity/*": ["sanity/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
+}

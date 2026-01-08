@@ -1,0 +1,362 @@
+{
+  "name": "ender",
+  "displayName": "Ender - AI Coding Assistant",
+  "description": "Multi-agent AI coding assistant powered by Claude with 14 specialized agents, 29 validators, and comprehensive safety features for developers of all skill levels",
+  "version": "1.0.0",
+  "publisher": "ender-ai",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ender-ai/ender-vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Snippets",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "claude",
+    "anthropic",
+    "coding assistant",
+    "code generation",
+    "code review",
+    "multi-agent"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ender",
+          "title": "Ender",
+          "icon": "resources/icons/ender.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "ender-tasks",
+          "title": "Ender Tasks",
+          "icon": "resources/icons/tasks.svg"
+        }
+      ]
+    },
+    "views": {
+      "ender": [
+        {
+          "type": "webview",
+          "id": "ender.chat",
+          "name": "Chat"
+        },
+        {
+          "id": "ender.memory",
+          "name": "Memory",
+          "type": "tree"
+        },
+        {
+          "id": "ender.instructions",
+          "name": "Instructions",
+          "type": "tree"
+        }
+      ],
+      "ender-tasks": [
+        {
+          "type": "webview",
+          "id": "ender.tasks",
+          "name": "Task Queue"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "ender.openChat",
+        "title": "Open Ender Chat",
+        "icon": "$(comment-discussion)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.newTask",
+        "title": "New Ender Task",
+        "icon": "$(add)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.viewMemory",
+        "title": "View Project Memory",
+        "icon": "$(database)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.undo",
+        "title": "Undo Last Change",
+        "icon": "$(discard)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.rollback",
+        "title": "Rollback to Checkpoint",
+        "icon": "$(history)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.approveChange",
+        "title": "Approve Pending Change",
+        "icon": "$(check)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.rejectChange",
+        "title": "Reject Pending Change",
+        "icon": "$(close)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.viewDiff",
+        "title": "View Change Diff",
+        "icon": "$(diff)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.exportMemory",
+        "title": "Export Project Memory",
+        "icon": "$(export)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.importMemory",
+        "title": "Import Project Memory",
+        "icon": "$(import)",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.toggleStrictMode",
+        "title": "Toggle Strict Validation Mode",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.showAssumptions",
+        "title": "Show Assumption Log",
+        "category": "Ender"
+      },
+      {
+        "command": "ender.clearHistory",
+        "title": "Clear Conversation History",
+        "category": "Ender"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "ender.newTask",
+          "when": "view == ender.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "ender.exportMemory",
+          "when": "view == ender.memory",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "ender.openChat",
+          "group": "ender@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Ender",
+      "properties": {
+        "ender.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API key (leave empty to use bundled key if available)",
+          "scope": "application"
+        },
+        "ender.approvalMode": {
+          "type": "string",
+          "enum": [
+            "automatic",
+            "manual",
+            "hybrid"
+          ],
+          "default": "hybrid",
+          "description": "Approval mode for code changes",
+          "enumDescriptions": [
+            "Changes applied without confirmation",
+            "Every change requires explicit approval",
+            "Automatic for high-confidence, manual for low"
+          ]
+        },
+        "ender.approvalGranularity.entirePlan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require approval for entire plan before execution"
+        },
+        "ender.approvalGranularity.perPhase": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require approval for each phase"
+        },
+        "ender.approvalGranularity.perFile": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require approval for each file change"
+        },
+        "ender.confidenceThreshold": {
+          "type": "number",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Confidence threshold below which manual review is required"
+        },
+        "ender.validatorMode": {
+          "type": "string",
+          "enum": [
+            "strict",
+            "fast",
+            "custom"
+          ],
+          "default": "strict",
+          "description": "Validator pipeline mode",
+          "enumDescriptions": [
+            "Run all 29 validators",
+            "Run only essential validators for speed",
+            "Select validators manually"
+          ]
+        },
+        "ender.showAgentIndicator": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show which agent is currently working"
+        },
+        "ender.showCostTracker": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show API cost tracker in status bar"
+        },
+        "ender.showContextUsage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show context token usage indicator"
+        },
+        "ender.sessionRecovery.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable session recovery on crash"
+        },
+        "ender.sessionRecovery.intervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "description": "Session state save interval in seconds"
+        },
+        "ender.undoStack.maxLevels": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum number of undo levels"
+        },
+        "ender.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable anonymous usage telemetry"
+        },
+        "ender.runtimeVerification.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable runtime code verification"
+        },
+        "ender.runtimeVerification.mode": {
+          "type": "string",
+          "enum": [
+            "sandbox",
+            "tests_only",
+            "full"
+          ],
+          "default": "sandbox",
+          "description": "Runtime verification mode"
+        },
+        "ender.showYourWork": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable 'Show Your Work' mode for step-by-step reasoning"
+        },
+        "ender.contextBudget.maxTokens": {
+          "type": "number",
+          "default": 150000,
+          "description": "Maximum tokens for context"
+        },
+        "ender.contextBudget.reserveForResponse": {
+          "type": "number",
+          "default": 50000,
+          "description": "Tokens to reserve for response"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "ender.openChat",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e"
+      },
+      {
+        "command": "ender.undo",
+        "key": "ctrl+shift+z",
+        "mac": "cmd+shift+z",
+        "when": "ender.hasChanges"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "lint": "eslint src --ext ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node ./out/test/runTest.js",
+    "test:unit": "mocha --require ts-node/register 'test/unit/**/*.test.ts'",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "better-sqlite3": "^11.0.0",
+    "marked": "^12.0.0",
+    "highlight.js": "^11.9.0",
+    "diff": "^5.2.0",
+    "glob": "^10.3.0",
+    "ignore": "^5.3.0",
+    "uuid": "^9.0.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/diff": "^5.0.0",
+    "@types/uuid": "^9.0.0",
+    "@types/mocha": "^10.0.0",
+    "@types/glob": "^8.1.0",
+    "@types/chai": "^4.3.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "typescript": "^5.3.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.56.0",
+    "@vscode/test-electron": "^2.3.0",
+    "@vscode/vsce": "^2.22.0",
+    "mocha": "^10.3.0",
+    "chai": "^4.3.0",
+    "ts-node": "^10.9.0"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ender Project Configuration",
+  "description": "Configuration file for Ender AI Coding Assistant",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration version",
+      "default": "1.0.0"
+    },
+    "projectName": {
+      "type": "string",
+      "description": "Name of the project"
+    },
+    "techStack": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Technologies used in the project",
+      "examples": [["typescript", "react", "node"]]
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Override global settings",
+      "properties": {
+        "approvalMode": {
+          "type": "string",
+          "enum": ["automatic", "manual", "hybrid"],
+          "description": "Approval mode for changes"
+        },
+        "validatorMode": {
+          "type": "string",
+          "enum": ["strict", "fast", "custom"],
+          "description": "Validator pipeline mode"
+        },
+        "contextBudget": {
+          "type": "object",
+          "properties": {
+            "maxTokens": {
+              "type": "number",
+              "default": 150000
+            }
+          }
+        }
+      }
+    },
+    "behavior": {
+      "type": "object",
+      "properties": {
+        "verbosity": {
+          "type": "string",
+          "enum": ["concise", "normal", "detailed"],
+          "default": "normal"
+        },
+        "codingStyle": {
+          "type": "string",
+          "enum": ["functional", "oop", "mixed"],
+          "default": "mixed"
+        },
+        "commentLevel": {
+          "type": "string",
+          "enum": ["minimal", "moderate", "verbose"],
+          "default": "moderate"
+        }
+      }
+    },
+    "customRules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Custom coding rules for this project",
+      "examples": [
+        ["Always use named exports", "Use absolute imports with @/ prefix"]
+      ]
+    },
+    "documentation": {
+      "type": "object",
+      "properties": {
+        "context7Libraries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Context7 library IDs to fetch documentation for"
+        },
+        "customDocs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "url": { "type": "string", "format": "uri" }
+            },
+            "required": ["name", "url"]
+          }
+        }
+      }
+    },
+    "costLimits": {
+      "type": "object",
+      "properties": {
+        "dailyBudget": {
+          "type": "number",
+          "description": "Maximum daily spend in USD"
+        },
+        "monthlyBudget": {
+          "type": "number",
+          "description": "Maximum monthly spend in USD"
+        },
+        "warnAt": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.8,
+          "description": "Warn when this percentage of budget is reached"
+        }
+      }
+    }
+  }
+}
