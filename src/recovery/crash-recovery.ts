@@ -5,6 +5,7 @@
 
 import { logger } from '../utils';
 import { sessionRecoveryManager } from './session-manager';
+import { gitManagerAgent } from '../agents/git-manager';
 
 export class CrashRecovery {
   /**
@@ -12,11 +13,23 @@ export class CrashRecovery {
    */
   async recover(): Promise<boolean> {
     logger.info('Checking for crash recovery...', 'CrashRecovery');
-    
-    const { needed, session, reason } = await sessionRecoveryManager.checkRecoveryNeeded();
-    
+
+    const { needed, session, reason } =
+      await sessionRecoveryManager.checkRecoveryNeeded();
+
     if (needed && session) {
       logger.warn(`Crash detected: ${reason}`, 'CrashRecovery');
+
+      // Try to pop any stashed changes from previous session
+      try {
+        await gitManagerAgent.popStash();
+        logger.info('Restored stashed changes', 'CrashRecovery');
+      } catch (error) {
+        logger.debug('No stash to pop or git not available', 'CrashRecovery', {
+          error,
+        });
+      }
+
       // Logic to replay or alert user
       await sessionRecoveryManager.restoreSession(session);
       return true;

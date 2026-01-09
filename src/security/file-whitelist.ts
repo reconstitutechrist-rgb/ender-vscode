@@ -76,7 +76,10 @@ export class FileWhitelist {
 
     // Default deny if outside workspace
     if (this.workspaceRoot && !resolvedPath.startsWith(this.workspaceRoot)) {
-      logger.warn(`Access denied to external file: ${filePath}`, 'FileWhitelist');
+      logger.warn(
+        `Access denied to external file: ${filePath}`,
+        'FileWhitelist',
+      );
       return false;
     }
 

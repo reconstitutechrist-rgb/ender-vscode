@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import { readFile, writeFile, fileExists } from '../utils/file-utils';
-import { logger, generateId } from '../utils';
+import { logger } from '../utils';
 import type { MemoryEntry, MemoryCategory, MemoryStatus } from '../types';
 
 export class MarkdownStore {
@@ -25,14 +25,14 @@ export class MarkdownStore {
     // Create directory structure
     const categories: MemoryCategory[] = [
       'architecture',
-      'conventions', 
+      'conventions',
       'dependencies',
       'known_issues',
       'business_logic',
       'plans',
       'history',
       'corrections',
-      'structure'
+      'structure',
     ];
 
     for (const category of categories) {
@@ -66,15 +66,22 @@ export class MarkdownStore {
    */
   private getCategoryHeader(category: MemoryCategory): string {
     const headers: Record<MemoryCategory, string> = {
-      architecture: '# Architecture Decisions\n\nStructural and design decisions for the project.\n\n---\n',
-      conventions: '# Coding Conventions\n\nCoding standards and patterns used in this project.\n\n---\n',
-      dependencies: '# Dependencies\n\nPackage decisions and external libraries.\n\n---\n',
-      known_issues: '# Known Issues\n\nDocumented problems and their resolutions.\n\n---\n',
-      business_logic: '# Business Logic\n\nDomain rules and business requirements.\n\n---\n',
-      plans: '# Implementation Plans\n\nApproved and completed implementation plans.\n\n---\n',
+      architecture:
+        '# Architecture Decisions\n\nStructural and design decisions for the project.\n\n---\n',
+      conventions:
+        '# Coding Conventions\n\nCoding standards and patterns used in this project.\n\n---\n',
+      dependencies:
+        '# Dependencies\n\nPackage decisions and external libraries.\n\n---\n',
+      known_issues:
+        '# Known Issues\n\nDocumented problems and their resolutions.\n\n---\n',
+      business_logic:
+        '# Business Logic\n\nDomain rules and business requirements.\n\n---\n',
+      plans:
+        '# Implementation Plans\n\nApproved and completed implementation plans.\n\n---\n',
       history: '# History\n\nCompleted work and changes.\n\n---\n',
       corrections: '# Corrections\n\nUser corrections and feedback.\n\n---\n',
-      structure: '# Project Structure\n\nFile organization and directory layout.\n\n---\n'
+      structure:
+        '# Project Structure\n\nFile organization and directory layout.\n\n---\n',
     };
 
     return headers[category];
@@ -91,10 +98,15 @@ export class MarkdownStore {
       let content = await readFile(filePath);
       content += '\n' + markdown;
       await writeFile(filePath, content);
-      
-      logger.debug(`Saved entry ${entry.id} to ${entry.category}.md`, 'MarkdownStore');
+
+      logger.debug(
+        `Saved entry ${entry.id} to ${entry.category}.md`,
+        'MarkdownStore',
+      );
     } catch (error) {
-      logger.error(`Failed to save entry ${entry.id}`, 'MarkdownStore', { error });
+      logger.error(`Failed to save entry ${entry.id}`, 'MarkdownStore', {
+        error,
+      });
       throw error;
     }
   }
@@ -106,20 +118,20 @@ export class MarkdownStore {
     const statusEmoji: Record<MemoryStatus, string> = {
       pending: '⏳',
       confirmed: '✅',
-      rejected: '❌'
+      rejected: '❌',
     };
 
     let md = `## Entry: ${entry.id}\n`;
     md += `**Date:** ${entry.timestamp.toISOString().split('T')[0]}\n`;
     md += `**Status:** ${statusEmoji[entry.status]} ${entry.status}\n`;
     md += `**Pinned:** ${entry.pinned ? '📌 yes' : 'no'}\n`;
-    
+
     if (entry.confidence < 100) {
       md += `**Confidence:** ${entry.confidence}%\n`;
     }
 
     md += `\n### Summary\n${entry.summary}\n`;
-    
+
     if (entry.detail && entry.detail !== entry.summary) {
       md += `\n### Detail\n${entry.detail}\n`;
     }
@@ -153,18 +165,18 @@ export class MarkdownStore {
    */
   async updateEntry(entry: MemoryEntry): Promise<void> {
     const filePath = this.getCategoryPath(entry.category);
-    
+
     try {
       let content = await readFile(filePath);
-      
+
       // Find and replace the entry
       const entryRegex = new RegExp(
         `## Entry: ${entry.id}[\\s\\S]*?(?=## Entry:|$)`,
-        'g'
+        'g',
       );
-      
+
       const newMarkdown = this.entryToMarkdown(entry);
-      
+
       if (entryRegex.test(content)) {
         content = content.replace(entryRegex, newMarkdown);
       } else {
@@ -173,9 +185,14 @@ export class MarkdownStore {
       }
 
       await writeFile(filePath, content);
-      logger.debug(`Updated entry ${entry.id} in ${entry.category}.md`, 'MarkdownStore');
+      logger.debug(
+        `Updated entry ${entry.id} in ${entry.category}.md`,
+        'MarkdownStore',
+      );
     } catch (error) {
-      logger.error(`Failed to update entry ${entry.id}`, 'MarkdownStore', { error });
+      logger.error(`Failed to update entry ${entry.id}`, 'MarkdownStore', {
+        error,
+      });
       throw error;
     }
   }
@@ -185,18 +202,18 @@ export class MarkdownStore {
    */
   async removeEntry(id: string, category: MemoryCategory): Promise<void> {
     const filePath = this.getCategoryPath(category);
-    
+
     try {
       let content = await readFile(filePath);
-      
+
       // Remove the entry
       const entryRegex = new RegExp(
         `## Entry: ${id}[\\s\\S]*?(?=## Entry:|$)`,
-        'g'
+        'g',
       );
-      
+
       content = content.replace(entryRegex, '');
-      
+
       // Clean up multiple blank lines
       content = content.replace(/\n{3,}/g, '\n\n');
 
@@ -211,26 +228,29 @@ export class MarkdownStore {
   /**
    * Parse entries from markdown file
    */
-  async parseEntries(category: MemoryCategory): Promise<Partial<MemoryEntry>[]> {
+  async parseEntries(
+    category: MemoryCategory,
+  ): Promise<Partial<MemoryEntry>[]> {
     const filePath = this.getCategoryPath(category);
-    
+
     try {
       const content = await readFile(filePath);
       const entries: Partial<MemoryEntry>[] = [];
-      
+
       // Find all entries
-      const entryRegex = /## Entry: ([^\n]+)\n([\s\S]*?)(?=## Entry:|---\s*$|$)/g;
+      const entryRegex =
+        /## Entry: ([^\n]+)\n([\s\S]*?)(?=## Entry:|---\s*$|$)/g;
       let match;
 
       while ((match = entryRegex.exec(content)) !== null) {
         const id = match[1]?.trim();
         const body = match[2] || '';
-        
+
         if (!id) continue;
 
         const entry: Partial<MemoryEntry> = {
           id,
-          category
+          category,
         };
 
         // Parse date
@@ -256,30 +276,36 @@ export class MarkdownStore {
         }
 
         // Parse summary
-        const summaryMatch = body.match(/### Summary\n([\s\S]*?)(?=###|---|\*\*|$)/);
+        const summaryMatch = body.match(
+          /### Summary\n([\s\S]*?)(?=###|---|\*\*|$)/,
+        );
         if (summaryMatch?.[1]) {
           entry.summary = summaryMatch[1].trim();
         }
 
         // Parse detail
-        const detailMatch = body.match(/### Detail\n([\s\S]*?)(?=###|---|\*\*|$)/);
+        const detailMatch = body.match(
+          /### Detail\n([\s\S]*?)(?=###|---|\*\*|$)/,
+        );
         if (detailMatch?.[1]) {
           entry.detail = detailMatch[1].trim();
         }
 
         // Parse related files
-        const filesMatch = body.match(/### Related Files\n([\s\S]*?)(?=###|---|\*\*|$)/);
+        const filesMatch = body.match(
+          /### Related Files\n([\s\S]*?)(?=###|---|\*\*|$)/,
+        );
         if (filesMatch?.[1]) {
           entry.relatedFiles = filesMatch[1]
             .split('\n')
-            .filter(line => line.startsWith('-'))
-            .map(line => line.replace(/^-\s*/, '').trim());
+            .filter((line) => line.startsWith('-'))
+            .map((line) => line.replace(/^-\s*/, '').trim());
         }
 
         // Parse tags
         const tagsMatch = body.match(/### Tags\n([^\n]+)/);
         if (tagsMatch?.[1]) {
-          entry.tags = tagsMatch[1].split(',').map(t => t.trim());
+          entry.tags = tagsMatch[1].split(',').map((t) => t.trim());
         }
 
         // Parse plan ID
@@ -289,7 +315,9 @@ export class MarkdownStore {
         }
 
         // Parse superseded by
-        const supersededMatch = body.match(/\*\*⚠️ Superseded by:\*\* ([^\n]+)/);
+        const supersededMatch = body.match(
+          /\*\*⚠️ Superseded by:\*\* ([^\n]+)/,
+        );
         if (supersededMatch?.[1]) {
           entry.supersededBy = supersededMatch[1].trim();
         }
@@ -299,7 +327,11 @@ export class MarkdownStore {
 
       return entries;
     } catch (error) {
-      logger.error(`Failed to parse entries from ${category}.md`, 'MarkdownStore', { error });
+      logger.error(
+        `Failed to parse entries from ${category}.md`,
+        'MarkdownStore',
+        { error },
+      );
       return [];
     }
   }
@@ -309,8 +341,15 @@ export class MarkdownStore {
    */
   async exportAll(): Promise<string> {
     const categories: MemoryCategory[] = [
-      'architecture', 'conventions', 'dependencies', 'known_issues',
-      'business_logic', 'plans', 'history', 'corrections', 'structure'
+      'architecture',
+      'conventions',
+      'dependencies',
+      'known_issues',
+      'business_logic',
+      'plans',
+      'history',
+      'corrections',
+      'structure',
     ];
 
     let exported = '# Ender Memory Export\n\n';
@@ -347,8 +386,15 @@ export class MarkdownStore {
    */
   async getSummary(): Promise<Record<MemoryCategory, number>> {
     const categories: MemoryCategory[] = [
-      'architecture', 'conventions', 'dependencies', 'known_issues',
-      'business_logic', 'plans', 'history', 'corrections', 'structure'
+      'architecture',
+      'conventions',
+      'dependencies',
+      'known_issues',
+      'business_logic',
+      'plans',
+      'history',
+      'corrections',
+      'structure',
     ];
 
     const summary: Record<string, number> = {};

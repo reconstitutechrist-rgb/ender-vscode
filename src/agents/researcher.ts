@@ -23,7 +23,7 @@ export class ResearcherAgent extends BaseAgent {
       model: 'claude-sonnet-4-5-20250929',
       systemPrompt: RESEARCHER_SYSTEM_PROMPT,
       capabilities: ['documentation_lookup', 'api_reference'],
-      maxTokens: 4096
+      maxTokens: 4096,
     };
     super(config, apiClient);
   }
@@ -42,25 +42,28 @@ export class ResearcherAgent extends BaseAgent {
         system: this.buildSystemPrompt(context),
         messages: this.buildMessages(prompt, context),
         maxTokens: this.maxTokens,
-        metadata: { agent: 'researcher', taskId: generateId() }
+        metadata: { agent: 'researcher', taskId: generateId() },
       });
 
       return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 85,
         tokensUsed: response.usage,
-        startTime
+        startTime,
       });
     } catch (error) {
       logger.error('Researcher failed', 'Researcher', { error });
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
 
-  private async fetchRelevantDocs(task: string, libraries?: string[]): Promise<string[]> {
+  private async fetchRelevantDocs(
+    task: string,
+    libraries?: string[],
+  ): Promise<string[]> {
     const docs: string[] = [];
     const libs = libraries ?? this.extractLibraryNames(task);
 
@@ -69,7 +72,7 @@ export class ResearcherAgent extends BaseAgent {
       if (matches.length > 0 && matches[0]) {
         const doc = await context7Client.getLibraryDocs({
           libraryId: matches[0].id,
-          maxTokens: 3000
+          maxTokens: 3000,
         });
         if (doc) docs.push(doc.content);
       }
@@ -79,19 +82,25 @@ export class ResearcherAgent extends BaseAgent {
   }
 
   private extractLibraryNames(task: string): string[] {
-    const patterns = /\b(react|next|express|prisma|zod|tailwind|typescript)\b/gi;
+    const patterns =
+      /\b(react|next|express|prisma|zod|tailwind|typescript)\b/gi;
     const matches = task.match(patterns) ?? [];
-    return [...new Set(matches.map(m => m.toLowerCase()))];
+    return [...new Set(matches.map((m) => m.toLowerCase()))];
   }
 
-  private buildResearchPrompt(task: string, docs: string[], _context: ContextBundle): string {
+  private buildResearchPrompt(
+    task: string,
+    docs: string[],
+    _context: ContextBundle,
+  ): string {
     let prompt = `## Research Question\n${task}\n\n`;
-    
+
     if (docs.length > 0) {
       prompt += '## Documentation\n' + docs.join('\n\n');
     }
 
-    prompt += '\n\nProvide a clear, accurate answer based on the documentation.';
+    prompt +=
+      '\n\nProvide a clear, accurate answer based on the documentation.';
     return prompt;
   }
 }

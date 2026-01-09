@@ -11,7 +11,7 @@ import type {
   MemorySearchResult,
   MemoryStats,
   MemoryExport,
-  MemoryConflict
+  MemoryConflict,
 } from '../types';
 import { logger, generateId } from '../utils';
 import { sqliteClient } from '../storage';
@@ -33,7 +33,12 @@ export class MemoryManager {
   /**
    * Add a new memory entry
    */
-  async addEntry(entry: Omit<MemoryEntry, 'id' | 'timestamp' | 'lastAccessed' | 'accessCount'>): Promise<MemoryEntry> {
+  async addEntry(
+    entry: Omit<
+      MemoryEntry,
+      'id' | 'timestamp' | 'lastAccessed' | 'accessCount'
+    >,
+  ): Promise<MemoryEntry> {
     this.ensureInitialized();
 
     const fullEntry: MemoryEntry = {
@@ -42,11 +47,14 @@ export class MemoryManager {
       timestamp: new Date(),
       lastAccessed: new Date(),
       accessCount: 0,
-      tier: 'warm'
+      tier: 'warm',
     };
 
     await sqliteClient.insertMemory(fullEntry);
-    logger.debug('Memory entry added', 'Memory', { id: fullEntry.id, category: fullEntry.category });
+    logger.debug('Memory entry added', 'Memory', {
+      id: fullEntry.id,
+      category: fullEntry.category,
+    });
 
     return fullEntry;
   }
@@ -56,7 +64,7 @@ export class MemoryManager {
    */
   async getEntry(id: string): Promise<MemoryEntry | null> {
     this.ensureInitialized();
-    
+
     const entry = await sqliteClient.getMemory(id);
     if (entry) {
       // Update access tracking
@@ -68,15 +76,18 @@ export class MemoryManager {
   /**
    * Update an existing entry
    */
-  async updateEntry(id: string, updates: Partial<MemoryEntry>): Promise<MemoryEntry | null> {
+  async updateEntry(
+    id: string,
+    updates: Partial<MemoryEntry>,
+  ): Promise<MemoryEntry | null> {
     this.ensureInitialized();
-    
+
     const existing = await sqliteClient.getMemory(id);
     if (!existing) return null;
 
     const updated = { ...existing, ...updates };
     await sqliteClient.updateMemory(updated);
-    
+
     logger.debug('Memory entry updated', 'Memory', { id });
     return updated;
   }
@@ -86,7 +97,7 @@ export class MemoryManager {
    */
   async deleteEntry(id: string): Promise<boolean> {
     this.ensureInitialized();
-    
+
     const success = await sqliteClient.deleteMemory(id);
     if (success) {
       logger.debug('Memory entry deleted', 'Memory', { id });
@@ -99,12 +110,12 @@ export class MemoryManager {
    */
   async search(options: MemorySearchOptions): Promise<MemorySearchResult> {
     this.ensureInitialized();
-    
+
     const entries = await sqliteClient.searchMemories(options);
-    
+
     return {
       entries,
-      totalCount: entries.length
+      totalCount: entries.length,
     };
   }
 
@@ -158,16 +169,22 @@ export class MemoryManager {
   /**
    * Check for conflicts with existing entries
    */
-  async checkConflicts(newEntry: Partial<MemoryEntry>): Promise<MemoryConflict[]> {
+  async checkConflicts(
+    newEntry: Partial<MemoryEntry>,
+  ): Promise<MemoryConflict[]> {
     this.ensureInitialized();
-    
+
     const conflicts: MemoryConflict[] = [];
-    
+
     // Search for similar entries
-    const similar = await this.search({
-      categories: newEntry.category ? [newEntry.category] : undefined,
-      query: newEntry.summary
-    });
+    const searchOptions: MemorySearchOptions = {};
+    if (newEntry.category) {
+      searchOptions.categories = [newEntry.category];
+    }
+    if (newEntry.summary) {
+      searchOptions.query = newEntry.summary;
+    }
+    const similar = await this.search(searchOptions);
 
     for (const existing of similar.entries) {
       // Simple conflict detection based on summary similarity
@@ -177,7 +194,7 @@ export class MemoryManager {
           newEntry: newEntry as MemoryEntry,
           conflictType: 'update',
           suggestedResolution: 'merge',
-          affectedFields: ['summary', 'detail']
+          affectedFields: ['summary', 'detail'],
         });
       }
     }
@@ -198,7 +215,7 @@ export class MemoryManager {
    */
   async export(): Promise<MemoryExport> {
     this.ensureInitialized();
-    
+
     const entries = (await this.search({})).entries;
     const stats = await this.getStats();
 
@@ -210,17 +227,19 @@ export class MemoryManager {
       metadata: {
         totalEntries: stats.totalEntries,
         categories: stats.byCategory,
-        pinnedCount: stats.pinnedCount
-      }
+        pinnedCount: stats.pinnedCount,
+      },
     };
   }
 
   /**
    * Import memories from export
    */
-  async import(data: MemoryExport): Promise<{ imported: number; skipped: number }> {
+  async import(
+    data: MemoryExport,
+  ): Promise<{ imported: number; skipped: number }> {
     this.ensureInitialized();
-    
+
     let imported = 0;
     let skipped = 0;
 
@@ -249,7 +268,7 @@ export class MemoryManager {
    */
   async updateTiers(): Promise<void> {
     this.ensureInitialized();
-    
+
     const now = new Date();
     const entries = (await this.search({})).entries;
 
@@ -261,7 +280,8 @@ export class MemoryManager {
 
       if (hoursSinceAccess < 24 && entry.accessCount > 5) {
         newTier = 'hot';
-      } else if (hoursSinceAccess > 168) { // > 1 week
+      } else if (hoursSinceAccess > 168) {
+        // > 1 week
         newTier = 'cold';
       } else {
         newTier = 'warm';
@@ -294,7 +314,7 @@ export class MemoryManager {
     const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
     const na = normalize(a);
     const nb = normalize(b);
-    
+
     // Simple containment check
     return na.includes(nb) || nb.includes(na);
   }
@@ -304,7 +324,9 @@ export class MemoryManager {
    */
   private ensureInitialized(): void {
     if (!this.initialized) {
-      throw new Error('Memory manager not initialized. Call initialize() first.');
+      throw new Error(
+        'Memory manager not initialized. Call initialize() first.',
+      );
     }
   }
 

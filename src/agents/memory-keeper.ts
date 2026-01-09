@@ -11,7 +11,7 @@ import type {
   MemoryEntry,
   MemoryCategory,
   AutoMemoryEvent,
-  Plan
+  Plan,
 } from '../types';
 import { logger, generateId } from '../utils';
 import { apiClient } from '../api';
@@ -50,8 +50,12 @@ export class MemoryKeeperAgent extends BaseAgent {
       type: 'memory-keeper',
       model: 'claude-sonnet-4-5-20250929',
       systemPrompt: MEMORY_KEEPER_SYSTEM_PROMPT,
-      capabilities: ['learning_extraction', 'memory_management', 'summarization'],
-      maxTokens: 2048
+      capabilities: [
+        'learning_extraction',
+        'memory_management',
+        'summarization',
+      ],
+      maxTokens: 2048,
     };
     super(config, apiClient);
   }
@@ -70,33 +74,40 @@ export class MemoryKeeperAgent extends BaseAgent {
       return this.createSuccessResult(JSON.stringify(memories, null, 2), {
         explanation: `Extracted ${memories.length} potential memory entries (pending confirmation)`,
         confidence: 85,
-        tokensUsed: { input: 0, output: 0 },
-        startTime
+        tokensUsed: { input: 0, output: 0, total: 0, cost: 0 },
+        startTime,
       });
     } catch (error) {
       logger.error('Memory Keeper failed', 'MemoryKeeper', { error });
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
 
-  private async handleAutoMemoryTrigger(
+  /**
+   * Handle auto-triggered memory events from plan completion, user corrections, etc.
+   * Called by other agents when memory-worthy events occur.
+   */
+  async handleAutoMemoryTrigger(
     event: AutoMemoryEvent,
     context: ContextBundle,
-    options: { plan?: Plan; content?: string }
+    options: { plan?: Plan; content?: string },
   ): Promise<Partial<MemoryEntry>[]> {
+    logger.info(`Auto memory trigger: ${event}`, 'MemoryKeeper');
+    // Context available for enhanced memory extraction in future
+    void context;
     const categoryMap: Record<AutoMemoryEvent, MemoryCategory> = {
-      'plan_approved': 'plans',
-      'phase_completed': 'history',
-      'plan_completed': 'history',
-      'dependency_added': 'dependencies',
-      'architecture_decision': 'architecture',
-      'convention_detected': 'conventions',
-      'bug_discovered': 'known_issues',
-      'user_correction': 'corrections',
-      'file_structure_change': 'structure'
+      plan_approved: 'plans',
+      phase_completed: 'history',
+      plan_completed: 'history',
+      dependency_added: 'dependencies',
+      architecture_decision: 'architecture',
+      convention_detected: 'conventions',
+      bug_discovered: 'known_issues',
+      user_correction: 'corrections',
+      file_structure_change: 'structure',
     };
 
     const category = categoryMap[event];
@@ -107,7 +118,7 @@ export class MemoryKeeperAgent extends BaseAgent {
       source: 'auto',
       status: 'pending',
       pinned: false,
-      confidence: 80
+      confidence: 80,
     };
 
     switch (event) {
@@ -115,7 +126,9 @@ export class MemoryKeeperAgent extends BaseAgent {
         entry.summary = `Plan: ${options.plan?.title ?? 'Unknown'}`;
         entry.detail = options.plan?.description ?? '';
         entry.relatedFiles = options.plan?.affectedFiles ?? [];
-        entry.planId = options.plan?.id;
+        if (options.plan?.id) {
+          entry.planId = options.plan.id;
+        }
         break;
 
       case 'phase_completed':
@@ -143,12 +156,16 @@ export class MemoryKeeperAgent extends BaseAgent {
         entry.detail = options.content ?? '';
     }
 
+    // Add to pending memories for user confirmation
+    this.pendingMemories.push(entry);
+    logger.info(`Created auto memory entry: ${entry.summary}`, 'MemoryKeeper');
+
     return [entry];
   }
 
   private async extractLearnings(
     content: string,
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<Partial<MemoryEntry>[]> {
     const prompt = `## Extract Learnings
 
@@ -163,7 +180,7 @@ Output as JSON array of memory entries with category, summary, detail, and tags.
       system: this.buildSystemPrompt(context),
       messages: this.buildMessages(prompt, context),
       maxTokens: 2000,
-      metadata: { agent: 'memory-keeper', taskId: generateId() }
+      metadata: { agent: 'memory-keeper', taskId: generateId() },
     });
 
     try {
@@ -181,7 +198,7 @@ Output as JSON array of memory entries with category, summary, detail, and tags.
           source: 'auto' as const,
           status: 'pending' as const,
           pinned: false,
-          confidence: 70
+          confidence: 70,
         }));
       }
     } catch {
@@ -193,10 +210,12 @@ Output as JSON array of memory entries with category, summary, detail, and tags.
 
   async summarizeOldMemories(
     memories: MemoryEntry[],
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<{ summary: string; tokensSaved: number }> {
-    const content = memories.map(m => `- ${m.summary}: ${m.detail}`).join('\n');
-    
+    const content = memories
+      .map((m) => `- ${m.summary}: ${m.detail}`)
+      .join('\n');
+
     const prompt = `Summarize these memory entries into a concise paragraph:
 
 ${content}`;
@@ -206,15 +225,15 @@ ${content}`;
       system: this.buildSystemPrompt(context),
       messages: this.buildMessages(prompt, context),
       maxTokens: 500,
-      metadata: { agent: 'memory-keeper', taskId: generateId() }
+      metadata: { agent: 'memory-keeper', taskId: generateId() },
     });
-    
+
     const originalTokens = content.length / 4;
     const summaryTokens = response.content.length / 4;
 
     return {
       summary: response.content,
-      tokensSaved: Math.max(0, originalTokens - summaryTokens)
+      tokensSaved: Math.max(0, originalTokens - summaryTokens),
     };
   }
 
@@ -227,7 +246,7 @@ ${content}`;
   }
 
   confirmMemory(id: string): Partial<MemoryEntry> | undefined {
-    const index = this.pendingMemories.findIndex(m => m.id === id);
+    const index = this.pendingMemories.findIndex((m) => m.id === id);
     if (index !== -1) {
       const memory = this.pendingMemories.splice(index, 1)[0];
       if (memory) {
@@ -239,7 +258,7 @@ ${content}`;
   }
 
   rejectMemory(id: string): void {
-    const index = this.pendingMemories.findIndex(m => m.id === id);
+    const index = this.pendingMemories.findIndex((m) => m.id === id);
     if (index !== -1) {
       this.pendingMemories.splice(index, 1);
     }

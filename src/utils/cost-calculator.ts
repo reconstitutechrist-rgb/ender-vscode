@@ -8,13 +8,13 @@ import type { TokenUsage, CostTracking } from '../types';
 // Pricing per 1M tokens (as of 2025)
 const PRICING = {
   'claude-opus-4-5-20251101': {
-    input: 15.00,  // $15 per 1M input tokens
-    output: 75.00  // $75 per 1M output tokens
+    input: 15.0, // $15 per 1M input tokens
+    output: 75.0, // $75 per 1M output tokens
   },
   'claude-sonnet-4-5-20250929': {
-    input: 3.00,   // $3 per 1M input tokens
-    output: 15.00  // $15 per 1M output tokens
-  }
+    input: 3.0, // $3 per 1M input tokens
+    output: 15.0, // $15 per 1M output tokens
+  },
 } as const;
 
 type ModelId = keyof typeof PRICING;
@@ -25,17 +25,21 @@ type ModelId = keyof typeof PRICING;
 export function calculateCost(
   model: string,
   inputTokens: number,
-  outputTokens: number
+  outputTokens: number,
 ): number {
   const pricing = PRICING[model as ModelId];
   if (!pricing) {
     // Default to Sonnet pricing for unknown models
-    return calculateCost('claude-sonnet-4-5-20250929', inputTokens, outputTokens);
+    return calculateCost(
+      'claude-sonnet-4-5-20250929',
+      inputTokens,
+      outputTokens,
+    );
   }
 
   const inputCost = (inputTokens / 1_000_000) * pricing.input;
   const outputCost = (outputTokens / 1_000_000) * pricing.output;
-  
+
   return Number((inputCost + outputCost).toFixed(6));
 }
 
@@ -45,13 +49,13 @@ export function calculateCost(
 export function createTokenUsage(
   model: string,
   input: number,
-  output: number
+  output: number,
 ): TokenUsage {
   return {
     input,
     output,
     total: input + output,
-    cost: calculateCost(model, input, output)
+    cost: calculateCost(model, input, output),
   };
 }
 
@@ -70,14 +74,22 @@ export class CostTracker {
   private currentDay: number;
   private currentMonth: number;
 
-  constructor(config?: { dailyBudget?: number; monthlyBudget?: number; warningThreshold?: number }) {
+  constructor(config?: {
+    dailyBudget?: number;
+    monthlyBudget?: number;
+    warningThreshold?: number;
+  }) {
     const now = new Date();
     this.currentDay = now.getDate();
     this.currentMonth = now.getMonth();
-    
+
     if (config) {
-      this.dailyBudget = config.dailyBudget;
-      this.monthlyBudget = config.monthlyBudget;
+      if (config.dailyBudget !== undefined) {
+        this.dailyBudget = config.dailyBudget;
+      }
+      if (config.monthlyBudget !== undefined) {
+        this.monthlyBudget = config.monthlyBudget;
+      }
       this.warningThreshold = config.warningThreshold ?? 0.8;
     }
   }
@@ -87,13 +99,13 @@ export class CostTracker {
    */
   private checkReset(): void {
     const now = new Date();
-    
+
     // Reset daily if new day
     if (now.getDate() !== this.currentDay) {
       this.today = 0;
       this.currentDay = now.getDate();
     }
-    
+
     // Reset monthly if new month
     if (now.getMonth() !== this.currentMonth) {
       this.thisMonth = 0;
@@ -106,7 +118,7 @@ export class CostTracker {
    */
   addCost(cost: number): void {
     this.checkReset();
-    
+
     this.today += cost;
     this.thisMonth += cost;
     this.allTime += cost;
@@ -118,21 +130,25 @@ export class CostTracker {
    */
   getTracking(): CostTracking {
     this.checkReset();
-    
+
     const result: CostTracking = {
       today: Number(this.today.toFixed(4)),
       thisMonth: Number(this.thisMonth.toFixed(4)),
       allTime: Number(this.allTime.toFixed(4)),
-      lastUpdated: this.lastUpdated
+      lastUpdated: this.lastUpdated,
     };
 
     if (this.dailyBudget || this.monthlyBudget) {
       result.budget = {
         daily: this.dailyBudget ?? 0,
         monthly: this.monthlyBudget ?? 0,
-        dailyRemaining: this.dailyBudget ? Math.max(0, this.dailyBudget - this.today) : 0,
-        monthlyRemaining: this.monthlyBudget ? Math.max(0, this.monthlyBudget - this.thisMonth) : 0,
-        warningThreshold: this.warningThreshold
+        dailyRemaining: this.dailyBudget
+          ? Math.max(0, this.dailyBudget - this.today)
+          : 0,
+        monthlyRemaining: this.monthlyBudget
+          ? Math.max(0, this.monthlyBudget - this.thisMonth)
+          : 0,
+        warningThreshold: this.warningThreshold,
       };
     }
 
@@ -144,14 +160,14 @@ export class CostTracker {
    */
   isApproachingLimit(): { daily: boolean; monthly: boolean } {
     this.checkReset();
-    
+
     return {
-      daily: this.dailyBudget 
-        ? this.today >= this.dailyBudget * this.warningThreshold 
+      daily: this.dailyBudget
+        ? this.today >= this.dailyBudget * this.warningThreshold
         : false,
-      monthly: this.monthlyBudget 
-        ? this.thisMonth >= this.monthlyBudget * this.warningThreshold 
-        : false
+      monthly: this.monthlyBudget
+        ? this.thisMonth >= this.monthlyBudget * this.warningThreshold
+        : false,
     };
   }
 
@@ -160,10 +176,12 @@ export class CostTracker {
    */
   isOverBudget(): { daily: boolean; monthly: boolean } {
     this.checkReset();
-    
+
     return {
       daily: this.dailyBudget ? this.today >= this.dailyBudget : false,
-      monthly: this.monthlyBudget ? this.thisMonth >= this.monthlyBudget : false
+      monthly: this.monthlyBudget
+        ? this.thisMonth >= this.monthlyBudget
+        : false,
     };
   }
 
@@ -185,7 +203,7 @@ export class CostTracker {
     if (state.thisMonth !== undefined) this.thisMonth = state.thisMonth;
     if (state.allTime !== undefined) this.allTime = state.allTime;
     if (state.lastUpdated) this.lastUpdated = new Date(state.lastUpdated);
-    
+
     // Check for resets after loading
     this.checkReset();
   }
@@ -201,8 +219,16 @@ export class CostTracker {
    * Set budget limits
    */
   setBudget(daily?: number, monthly?: number): void {
-    this.dailyBudget = daily;
-    this.monthlyBudget = monthly;
+    if (daily !== undefined) {
+      this.dailyBudget = daily;
+    } else {
+      delete this.dailyBudget;
+    }
+    if (monthly !== undefined) {
+      this.monthlyBudget = monthly;
+    } else {
+      delete this.monthlyBudget;
+    }
   }
 
   /**
@@ -212,17 +238,23 @@ export class CostTracker {
     totalCost: number;
     byModel: Record<string, { calls: number; tokens: number; cost: number }>;
   } {
-    const byModel: Record<string, { calls: number; tokens: number; cost: number }> = {};
+    const byModel: Record<
+      string,
+      { calls: number; tokens: number; cost: number }
+    > = {};
     let totalCost = 0;
 
     for (const usage of usages) {
       if (!byModel[usage.model]) {
         byModel[usage.model] = { calls: 0, tokens: 0, cost: 0 };
       }
-      byModel[usage.model].calls++;
-      byModel[usage.model].tokens += usage.tokens.total;
-      byModel[usage.model].cost += usage.tokens.cost;
-      totalCost += usage.tokens.cost;
+      const modelEntry = byModel[usage.model];
+      if (modelEntry) {
+        modelEntry.calls++;
+        modelEntry.tokens += usage.tokens.total ?? 0;
+        modelEntry.cost += usage.tokens.cost ?? 0;
+        totalCost += usage.tokens.cost ?? 0;
+      }
     }
 
     return { totalCost, byModel };

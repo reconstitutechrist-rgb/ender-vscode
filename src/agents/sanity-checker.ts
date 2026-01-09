@@ -18,7 +18,7 @@ import type {
   AssumptionVerification,
   CompletionStatus,
   TrackedInstruction,
-  Assumption
+  Assumption,
 } from '../types';
 import { logger, generateId } from '../utils';
 import { requestAlignmentChecker } from '../sanity/request-alignment';
@@ -86,7 +86,7 @@ export class SanityCheckerAgent extends BaseAgent {
       model: 'claude-opus-4-5-20251101',
       systemPrompt: SANITY_CHECKER_SYSTEM_PROMPT,
       capabilities: ['sanity_check', 'verification', 'compliance'],
-      maxTokens: 4096
+      maxTokens: 4096,
     };
     super(config, apiClient);
   }
@@ -95,13 +95,13 @@ export class SanityCheckerAgent extends BaseAgent {
    * Perform sanity check on code changes
    */
   async execute(params: AgentExecuteParams): Promise<AgentResult> {
-    const { task, context, files } = params;
+    const { context, files } = params;
     const startTime = Date.now();
     const changes = files ?? [];
 
     logger.agent('sanity-checker', 'Starting sanity check', {
       fileCount: changes.length,
-      instructionCount: this.trackedInstructions.length
+      instructionCount: this.trackedInstructions.length,
     });
 
     try {
@@ -111,13 +111,13 @@ export class SanityCheckerAgent extends BaseAgent {
         instructionCompliance,
         requestAlignment,
         assumptionsVerified,
-        completionStatus
+        completionStatus,
       ] = await Promise.all([
         this.checkHallucinations(changes, context),
         this.checkInstructionCompliance(changes, context),
         this.checkRequestAlignment(changes, context),
         this.verifyAssumptions(context),
-        this.checkCompletion(changes, context)
+        this.checkCompletion(changes, context),
       ]);
 
       // Calculate adjusted confidence
@@ -126,13 +126,13 @@ export class SanityCheckerAgent extends BaseAgent {
         hallucinations,
         instructionCompliance,
         requestAlignment,
-        completionStatus
+        completionStatus,
       );
 
       const passed = this.determinePassStatus(
         hallucinations,
         instructionCompliance,
-        adjustedConfidence
+        adjustedConfidence,
       );
 
       const output: SanityCheckerOutput = {
@@ -142,26 +142,23 @@ export class SanityCheckerAgent extends BaseAgent {
         requestAlignment,
         assumptionsVerified,
         completionStatus,
-        adjustedConfidence
+        adjustedConfidence,
       };
 
-      return this.createSuccessResult(
-        JSON.stringify(output, null, 2),
-        {
-          confidence: adjustedConfidence,
-          tokensUsed: { input: 0, output: 0, total: 0, cost: 0 },
-          startTime,
-          explanation: this.formatExplanation(output),
-          nextAgent: passed ? 'documenter' : 'coder',
-          warnings: this.generateWarnings(output)
-        }
-      );
+      return this.createSuccessResult(JSON.stringify(output, null, 2), {
+        confidence: adjustedConfidence,
+        tokensUsed: { input: 0, output: 0, total: 0, cost: 0 },
+        startTime,
+        explanation: this.formatExplanation(output),
+        nextAgent: passed ? 'documenter' : 'coder',
+        warnings: this.generateWarnings(output),
+      });
     } catch (error) {
       logger.error('Sanity checker failed', 'SanityChecker', { error });
 
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
@@ -171,7 +168,7 @@ export class SanityCheckerAgent extends BaseAgent {
    */
   private async checkHallucinations(
     changes: FileChange[],
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<HallucinationIssue[]> {
     const issues: HallucinationIssue[] = [];
 
@@ -197,7 +194,9 @@ export class SanityCheckerAgent extends BaseAgent {
   /**
    * Check imports for hallucinated packages
    */
-  private async checkImports(change: FileChange): Promise<HallucinationIssue[]> {
+  private async checkImports(
+    change: FileChange,
+  ): Promise<HallucinationIssue[]> {
     const issues: HallucinationIssue[] = [];
     const content = change.content;
 
@@ -221,7 +220,7 @@ export class SanityCheckerAgent extends BaseAgent {
           type: 'import',
           location: { file: change.path, line },
           hallucinated: packageName,
-          ...(suggestion ? { suggestion } : {})
+          ...(suggestion ? { suggestion } : {}),
         });
       }
     };
@@ -251,14 +250,17 @@ export class SanityCheckerAgent extends BaseAgent {
    */
   private async checkApiCalls(
     change: FileChange,
-    context: ContextBundle
+    _context: ContextBundle,
   ): Promise<HallucinationIssue[]> {
     const issues: HallucinationIssue[] = [];
 
     // Common hallucinated method patterns
     const suspiciousPatterns = [
       { pattern: /\.readFilePromise\s*\(/, suggestion: 'fs.promises.readFile' },
-      { pattern: /\.writeFilePromise\s*\(/, suggestion: 'fs.promises.writeFile' },
+      {
+        pattern: /\.writeFilePromise\s*\(/,
+        suggestion: 'fs.promises.writeFile',
+      },
       { pattern: /\.contains\s*\(/, suggestion: '.includes()' },
       { pattern: /\.size\s*\(/, suggestion: '.length or .size (property)' },
       { pattern: /\.first\s*\(/, suggestion: '[0] or .at(0)' },
@@ -279,7 +281,7 @@ export class SanityCheckerAgent extends BaseAgent {
             type: 'api',
             location: { file: change.path, line: lineNum },
             hallucinated: match?.[0]?.trim() ?? 'Unknown',
-            suggestion
+            suggestion,
           });
         }
       }
@@ -294,7 +296,7 @@ export class SanityCheckerAgent extends BaseAgent {
    */
   private async checkTypes(
     change: FileChange,
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<HallucinationIssue[]> {
     const issues: HallucinationIssue[] = [];
     const content = change.content;
@@ -307,7 +309,9 @@ export class SanityCheckerAgent extends BaseAgent {
     // Extract all type definitions from context files
     const definedTypes = new Set<string>();
     for (const file of context.relevantFiles) {
-      const typeMatches = file.content.matchAll(/(?:type|interface|class|enum)\s+(\w+)/g);
+      const typeMatches = file.content.matchAll(
+        /(?:type|interface|class|enum)\s+(\w+)/g,
+      );
       for (const match of typeMatches) {
         if (match[1]) {
           definedTypes.add(match[1]);
@@ -316,7 +320,9 @@ export class SanityCheckerAgent extends BaseAgent {
     }
 
     // Also extract types from the current file being checked
-    const selfTypeMatches = content.matchAll(/(?:type|interface|class|enum)\s+(\w+)/g);
+    const selfTypeMatches = content.matchAll(
+      /(?:type|interface|class|enum)\s+(\w+)/g,
+    );
     for (const match of selfTypeMatches) {
       if (match[1]) {
         definedTypes.add(match[1]);
@@ -325,14 +331,61 @@ export class SanityCheckerAgent extends BaseAgent {
 
     // Built-in TypeScript types
     const builtinTypes = new Set([
-      'string', 'number', 'boolean', 'void', 'null', 'undefined', 'any', 'unknown', 'never', 'object',
-      'Array', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Date', 'RegExp', 'Error',
-      'Record', 'Partial', 'Required', 'Readonly', 'Pick', 'Omit', 'Exclude', 'Extract',
-      'NonNullable', 'Parameters', 'ReturnType', 'InstanceType', 'ThisType',
-      'Function', 'Symbol', 'BigInt', 'Object', 'String', 'Number', 'Boolean',
-      'Uint8Array', 'Int8Array', 'Uint16Array', 'Int16Array', 'Uint32Array', 'Int32Array',
-      'Float32Array', 'Float64Array', 'ArrayBuffer', 'DataView', 'JSON',
-      'Awaited', 'Capitalize', 'Lowercase', 'Uppercase', 'Uncapitalize'
+      'string',
+      'number',
+      'boolean',
+      'void',
+      'null',
+      'undefined',
+      'any',
+      'unknown',
+      'never',
+      'object',
+      'Array',
+      'Map',
+      'Set',
+      'WeakMap',
+      'WeakSet',
+      'Promise',
+      'Date',
+      'RegExp',
+      'Error',
+      'Record',
+      'Partial',
+      'Required',
+      'Readonly',
+      'Pick',
+      'Omit',
+      'Exclude',
+      'Extract',
+      'NonNullable',
+      'Parameters',
+      'ReturnType',
+      'InstanceType',
+      'ThisType',
+      'Function',
+      'Symbol',
+      'BigInt',
+      'Object',
+      'String',
+      'Number',
+      'Boolean',
+      'Uint8Array',
+      'Int8Array',
+      'Uint16Array',
+      'Int16Array',
+      'Uint32Array',
+      'Int32Array',
+      'Float32Array',
+      'Float64Array',
+      'ArrayBuffer',
+      'DataView',
+      'JSON',
+      'Awaited',
+      'Capitalize',
+      'Lowercase',
+      'Uppercase',
+      'Uncapitalize',
     ]);
 
     // Find type annotations in the changed file
@@ -342,7 +395,7 @@ export class SanityCheckerAgent extends BaseAgent {
       /as\s+([A-Z]\w+)/g,
       /<([A-Z]\w+)(?:\s*[,>])/g,
       /extends\s+([A-Z]\w+)/g,
-      /implements\s+([A-Z]\w+)/g
+      /implements\s+([A-Z]\w+)/g,
     ];
 
     const lines = content.split('\n');
@@ -372,7 +425,8 @@ export class SanityCheckerAgent extends BaseAgent {
           if (typeName.length === 1) continue;
 
           // Skip if built-in or defined in context
-          if (builtinTypes.has(typeName) || definedTypes.has(typeName)) continue;
+          if (builtinTypes.has(typeName) || definedTypes.has(typeName))
+            continue;
 
           // Check for common framework types that are likely valid
           if (this.isCommonFrameworkType(typeName)) continue;
@@ -380,7 +434,7 @@ export class SanityCheckerAgent extends BaseAgent {
           const issue: HallucinationIssue = {
             type: 'type',
             location: { file: change.path, line: lineNum + 1 },
-            hallucinated: typeName
+            hallucinated: typeName,
           };
 
           const suggestion = this.suggestSimilarType(typeName, definedTypes);
@@ -402,18 +456,54 @@ export class SanityCheckerAgent extends BaseAgent {
   private isCommonFrameworkType(typeName: string): boolean {
     const frameworkTypes = new Set([
       // React
-      'React', 'ReactNode', 'ReactElement', 'FC', 'Component', 'PureComponent',
-      'useState', 'useEffect', 'useCallback', 'useMemo', 'useRef', 'useContext',
-      'PropsWithChildren', 'RefObject', 'MutableRefObject', 'Dispatch', 'SetStateAction',
+      'React',
+      'ReactNode',
+      'ReactElement',
+      'FC',
+      'Component',
+      'PureComponent',
+      'useState',
+      'useEffect',
+      'useCallback',
+      'useMemo',
+      'useRef',
+      'useContext',
+      'PropsWithChildren',
+      'RefObject',
+      'MutableRefObject',
+      'Dispatch',
+      'SetStateAction',
       // Node.js
-      'Buffer', 'NodeJS', 'EventEmitter', 'Stream', 'Readable', 'Writable',
+      'Buffer',
+      'NodeJS',
+      'EventEmitter',
+      'Stream',
+      'Readable',
+      'Writable',
       // Express
-      'Request', 'Response', 'NextFunction', 'Express', 'Router',
+      'Request',
+      'Response',
+      'NextFunction',
+      'Express',
+      'Router',
       // VS Code
-      'ExtensionContext', 'TextDocument', 'Position', 'Range', 'Uri', 'Disposable',
-      'TreeItem', 'TreeDataProvider', 'WebviewView', 'WebviewViewProvider',
+      'ExtensionContext',
+      'TextDocument',
+      'Position',
+      'Range',
+      'Uri',
+      'Disposable',
+      'TreeItem',
+      'TreeDataProvider',
+      'WebviewView',
+      'WebviewViewProvider',
       // Common
-      'Event', 'EventTarget', 'HTMLElement', 'Element', 'Document', 'Window'
+      'Event',
+      'EventTarget',
+      'HTMLElement',
+      'Element',
+      'Document',
+      'Window',
     ]);
     return frameworkTypes.has(typeName);
   }
@@ -421,7 +511,10 @@ export class SanityCheckerAgent extends BaseAgent {
   /**
    * Suggest similar type from defined types
    */
-  private suggestSimilarType(name: string, definedTypes: Set<string>): string | undefined {
+  private suggestSimilarType(
+    name: string,
+    definedTypes: Set<string>,
+  ): string | undefined {
     let bestMatch: string | undefined;
     let bestScore = 3; // Max Levenshtein distance threshold
 
@@ -464,7 +557,7 @@ export class SanityCheckerAgent extends BaseAgent {
           row[j] = Math.min(
             (prevRow[j] ?? 0) + 1,
             (row[j - 1] ?? 0) + 1,
-            (prevRow[j - 1] ?? 0) + cost
+            (prevRow[j - 1] ?? 0) + cost,
           );
         }
       }
@@ -484,7 +577,7 @@ export class SanityCheckerAgent extends BaseAgent {
       /^easy-.*-simple$/,
       /^@fake\//,
     ];
-    return suspicious.some(p => p.test(name));
+    return suspicious.some((p) => p.test(name));
   }
 
   /**
@@ -492,7 +585,7 @@ export class SanityCheckerAgent extends BaseAgent {
    */
   private suggestRealPackage(hallucinated: string): string | undefined {
     const suggestions: Record<string, string> = {
-      'moment': 'date-fns or dayjs',
+      moment: 'date-fns or dayjs',
       'lodash-utils': 'lodash',
       'axios-helper': 'axios',
     };
@@ -504,11 +597,12 @@ export class SanityCheckerAgent extends BaseAgent {
    */
   private async checkInstructionCompliance(
     changes: FileChange[],
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<InstructionComplianceReport> {
-    const instructions = this.trackedInstructions.length > 0
-      ? this.trackedInstructions
-      : context.instructions ?? [];
+    const instructions =
+      this.trackedInstructions.length > 0
+        ? this.trackedInstructions
+        : (context.instructions ?? []);
 
     if (instructions.length === 0) {
       return {
@@ -516,7 +610,9 @@ export class SanityCheckerAgent extends BaseAgent {
         complied: 0,
         violated: 0,
         partial: 0,
-        details: []
+        notApplicable: 0,
+        details: [],
+        overallScore: 100,
       };
     }
 
@@ -528,7 +624,7 @@ Analyze the following code changes against the user instructions.
 ${instructions.map((i, idx) => `${idx + 1}. ${i.text}`).join('\n')}
 
 ### Code Changes:
-${changes.map(c => `File: ${c.path}\n${c.content.slice(0, 1000)}...`).join('\n\n')}
+${changes.map((c) => `File: ${c.path}\n${c.content.slice(0, 1000)}...`).join('\n\n')}
 
 For each instruction, determine if it was: 'complied', 'violated', 'partial', or 'not_applicable'.
 Provide evidence from the code.
@@ -543,53 +639,89 @@ Response JSON Format:
     try {
       const response = await this.callApi({
         model: this.defaultModel,
-        system: "You are a compliance officer. Verify instructions against code.",
+        system:
+          'You are a compliance officer. Verify instructions against code.',
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 2000,
-        metadata: { agent: this.type, taskId: generateId() }
+        metadata: { agent: this.type, taskId: generateId() },
       });
 
-      const result = JSON.parse(response.content.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+      const result = JSON.parse(
+        response.content.match(/\{[\s\S]*\}/)?.[0] ?? '{}',
+      );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const detailsMap = new Map<number, any>(result.details?.map((d: any) => [d.index, d]) ?? []);
+      const detailsMap = new Map<number, any>(
+        result.details?.map((d: any) => [d.index, d]) ?? [],
+      );
 
-      let complied = 0, violated = 0, partial = 0;
+      let complied = 0,
+        violated = 0,
+        partial = 0,
+        notApplicable = 0;
 
-      const details = instructions.map((inst, idx) => {
-        const check = detailsMap.get(idx) || { status: 'complied', evidence: 'Assumed complied' };
-        
-        if (check.status === 'complied') complied++;
-        else if (check.status === 'violated') violated++;
-        else if (check.status === 'partial') partial++;
-
-        return {
-          instruction: inst.text,
-          status: check.status as 'complied' | 'violated' | 'partial' | 'not_applicable',
-          evidence: check.evidence
+      const details: TrackedInstruction[] = instructions.map((inst, idx) => {
+        const check = detailsMap.get(idx) || {
+          status: 'complied',
+          evidence: 'Assumed complied',
         };
+        const status = check.status as TrackedInstruction['status'];
+
+        if (status === 'complied') complied++;
+        else if (status === 'violated') violated++;
+        else if (status === 'partial') partial++;
+        else if (status === 'not_applicable') notApplicable++;
+
+        const detail: TrackedInstruction = {
+          id: inst.id,
+          text: inst.text,
+          source: inst.source,
+          timestamp: inst.timestamp,
+          priority: inst.priority,
+          status,
+        };
+        if (check.evidence) {
+          detail.evidence = check.evidence;
+        }
+        return detail;
       });
+
+      const overallScore =
+        instructions.length > 0
+          ? Math.round((complied / instructions.length) * 100)
+          : 100;
 
       return {
         totalInstructions: instructions.length,
         complied,
         violated,
         partial,
-        details
+        notApplicable,
+        details,
+        overallScore,
       };
-
     } catch (error) {
       logger.error('Failed to check compliance', 'SanityChecker', { error });
       // Fallback to optimistic
+      const fallbackDetails: TrackedInstruction[] = instructions.map((i) => {
+        const detail: TrackedInstruction = {
+          id: i.id,
+          text: i.text,
+          source: i.source,
+          timestamp: i.timestamp,
+          priority: i.priority,
+          status: 'complied',
+          evidence: 'Optimistic fallback',
+        };
+        return detail;
+      });
       return {
         totalInstructions: instructions.length,
         complied: instructions.length,
         violated: 0,
         partial: 0,
-        details: instructions.map(i => ({ 
-          instruction: i.text, 
-          status: 'complied', 
-          evidence: 'Optimistic fallback' 
-        }))
+        notApplicable: 0,
+        details: fallbackDetails,
+        overallScore: 100,
       };
     }
   }
@@ -599,15 +731,15 @@ Response JSON Format:
    */
   private async checkRequestAlignment(
     changes: FileChange[],
-    context: ContextBundle
+    _context: ContextBundle,
   ): Promise<RequestAlignmentReport> {
     const originalRequest = this.originalRequest || 'Not captured';
-    
+
     // Use callApi wrapper to match interface expected by RequestAlignmentChecker
     const callApiWrapper = async (params: any) => {
       const response = await this.callApi({
         ...params,
-        metadata: { agent: this.type, taskId: generateId() }
+        metadata: { agent: this.type, taskId: generateId() },
       });
       return { content: response.content };
     };
@@ -616,7 +748,7 @@ Response JSON Format:
       originalRequest,
       changes,
       callApiWrapper,
-      this.defaultModel
+      this.defaultModel,
     );
   }
 
@@ -624,17 +756,18 @@ Response JSON Format:
    * Verify assumptions
    */
   private async verifyAssumptions(
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<AssumptionVerification[]> {
-    const assumptions = this.assumptions.length > 0
-      ? this.assumptions
-      : context.assumptions ?? [];
+    const assumptions =
+      this.assumptions.length > 0
+        ? this.assumptions
+        : (context.assumptions ?? []);
 
-    return assumptions.map(a => ({
+    return assumptions.map((a) => ({
       assumption: a.assumption,
       verified: a.verified,
       verificationMethod: a.verificationMethod ?? 'Not verified',
-      result: a.verificationResult ?? 'Pending'
+      result: a.verificationResult ?? 'Pending',
     }));
   }
 
@@ -643,7 +776,7 @@ Response JSON Format:
    */
   private async checkCompletion(
     changes: FileChange[],
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<CompletionStatus> {
     return completionTracker.check(changes, context);
   }
@@ -656,7 +789,7 @@ Response JSON Format:
     hallucinations: HallucinationIssue[],
     instructionCompliance: InstructionComplianceReport,
     requestAlignment: RequestAlignmentReport,
-    completionStatus: CompletionStatus
+    completionStatus: CompletionStatus,
   ): number {
     let confidence = initial;
 
@@ -667,7 +800,7 @@ Response JSON Format:
     const total = instructionCompliance.totalInstructions || 1;
     const complianceScore = (instructionCompliance.complied / total) * 100;
     if (complianceScore < 80) {
-      confidence -= (80 - complianceScore);
+      confidence -= 80 - complianceScore;
     }
 
     // Adjust for alignment
@@ -676,7 +809,8 @@ Response JSON Format:
     }
 
     // Deduct for incomplete work
-    const incompleteCount = completionStatus.incomplete.length + completionStatus.blocked.length;
+    const incompleteCount =
+      completionStatus.incomplete.length + completionStatus.blocked.length;
     confidence -= incompleteCount * 5;
 
     return Math.max(0, Math.min(100, Math.round(confidence)));
@@ -688,10 +822,10 @@ Response JSON Format:
   private determinePassStatus(
     hallucinations: HallucinationIssue[],
     instructionCompliance: InstructionComplianceReport,
-    adjustedConfidence: number
+    adjustedConfidence: number,
   ): boolean {
     // Fail if any critical hallucinations
-    if (hallucinations.some(h => h.type === 'import' || h.type === 'api')) {
+    if (hallucinations.some((h) => h.type === 'import' || h.type === 'api')) {
       return false;
     }
 
@@ -724,16 +858,22 @@ Response JSON Format:
 
     if (output.hallucinationsFound.length > 0) {
       lines.push('\n**Potential Hallucinations:**');
-      output.hallucinationsFound.forEach(h => {
-        lines.push(`- ${h.type}: ${h.hallucinated} at ${h.location.file}:${h.location.line}`);
+      output.hallucinationsFound.forEach((h) => {
+        lines.push(
+          `- ${h.type}: ${h.hallucinated} at ${h.location.file}:${h.location.line}`,
+        );
         if (h.suggestion) lines.push(`  Suggestion: ${h.suggestion}`);
       });
     }
 
     const total = output.instructionCompliance.totalInstructions || 1;
-    const score = Math.round((output.instructionCompliance.complied / total) * 100);
+    const score = Math.round(
+      (output.instructionCompliance.complied / total) * 100,
+    );
     lines.push(`\n**Instruction Compliance:** ${score}%`);
-    lines.push(`**Request Alignment:** ${output.requestAlignment.alignmentScore}%`);
+    lines.push(
+      `**Request Alignment:** ${output.requestAlignment.alignmentScore}%`,
+    );
 
     return lines.join('\n');
   }
@@ -745,19 +885,27 @@ Response JSON Format:
     const warnings: string[] = [];
 
     if (output.hallucinationsFound.length > 0) {
-      warnings.push(`Found ${output.hallucinationsFound.length} potential hallucination(s)`);
+      warnings.push(
+        `Found ${output.hallucinationsFound.length} potential hallucination(s)`,
+      );
     }
 
     if (output.instructionCompliance.violated > 0) {
-      warnings.push(`${output.instructionCompliance.violated} instruction(s) violated`);
+      warnings.push(
+        `${output.instructionCompliance.violated} instruction(s) violated`,
+      );
     }
 
     if (output.requestAlignment.missedGoals.length > 0) {
-      warnings.push(`Missed goals: ${output.requestAlignment.missedGoals.join(', ')}`);
+      warnings.push(
+        `Missed goals: ${output.requestAlignment.missedGoals.join(', ')}`,
+      );
     }
 
     if (output.completionStatus.incomplete.length > 0) {
-      warnings.push(`${output.completionStatus.incomplete.length} task(s) incomplete`);
+      warnings.push(
+        `${output.completionStatus.incomplete.length} task(s) incomplete`,
+      );
     }
 
     return warnings;
@@ -766,11 +914,13 @@ Response JSON Format:
   /**
    * Track a new instruction
    */
-  trackInstruction(instruction: Omit<TrackedInstruction, 'id' | 'status'>): void {
+  trackInstruction(
+    instruction: Omit<TrackedInstruction, 'id' | 'status'>,
+  ): void {
     this.trackedInstructions.push({
       ...instruction,
       id: generateId(),
-      status: 'pending'
+      status: 'pending',
     });
   }
 
@@ -781,7 +931,7 @@ Response JSON Format:
     this.assumptions.push({
       ...assumption,
       id: generateId(),
-      createdAt: new Date()
+      createdAt: new Date(),
     });
   }
 

@@ -5,7 +5,12 @@
 
 import * as vscode from 'vscode';
 import { logger, generateId } from '../utils';
-import type { SessionState, Plan, FileChange, ConversationMessage } from '../types';
+import type {
+  SessionState,
+  Plan,
+  FileChange,
+  ConversationMessage,
+} from '../types';
 
 export interface RecoveryConfig {
   enabled: boolean;
@@ -16,7 +21,7 @@ export interface RecoveryConfig {
 const DEFAULT_CONFIG: RecoveryConfig = {
   enabled: true,
   intervalSeconds: 60,
-  maxSnapshots: 5
+  maxSnapshots: 5,
 };
 
 export class SessionRecoveryManager {
@@ -36,7 +41,7 @@ export class SessionRecoveryManager {
    */
   initialize(context: vscode.ExtensionContext): void {
     this.context = context;
-    
+
     if (this.config.enabled) {
       this.startAutoSave();
     }
@@ -49,7 +54,7 @@ export class SessionRecoveryManager {
    */
   startSession(): string {
     const sessionId = generateId();
-    
+
     this.currentSession = {
       id: sessionId,
       timestamp: new Date(),
@@ -57,12 +62,12 @@ export class SessionRecoveryManager {
       conversationHistory: [],
       memorySnapshot: [],
       lastSuccessfulAction: '',
-      incompleteActions: []
+      incompleteActions: [],
     };
 
     this.saveSession();
     logger.info(`Session started: ${sessionId}`, 'Recovery');
-    
+
     return sessionId;
   }
 
@@ -77,7 +82,7 @@ export class SessionRecoveryManager {
     this.currentSession = {
       ...this.currentSession!,
       ...updates,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
   }
 
@@ -85,10 +90,12 @@ export class SessionRecoveryManager {
    * Set active plan
    */
   setActivePlan(plan: Plan | undefined): void {
-    this.updateSession({
-      activePlan: plan,
-      currentPhase: plan?.currentPhaseIndex
-    });
+    const update: Partial<SessionState> = {};
+    if (plan) {
+      update.activePlan = plan;
+      update.currentPhase = plan.currentPhaseIndex;
+    }
+    this.updateSession(update);
   }
 
   /**
@@ -99,7 +106,7 @@ export class SessionRecoveryManager {
 
     this.currentSession.pendingChanges = [
       ...this.currentSession.pendingChanges,
-      ...changes
+      ...changes,
     ];
   }
 
@@ -118,10 +125,10 @@ export class SessionRecoveryManager {
     if (!this.currentSession) return;
 
     this.currentSession.conversationHistory.push(message);
-    
+
     // Keep last 50 messages in session
     if (this.currentSession.conversationHistory.length > 50) {
-      this.currentSession.conversationHistory = 
+      this.currentSession.conversationHistory =
         this.currentSession.conversationHistory.slice(-50);
     }
   }
@@ -133,8 +140,8 @@ export class SessionRecoveryManager {
     if (!this.currentSession) return;
 
     this.currentSession.lastSuccessfulAction = action;
-    this.currentSession.incompleteActions = 
-      this.currentSession.incompleteActions.filter(a => a !== action);
+    this.currentSession.incompleteActions =
+      this.currentSession.incompleteActions.filter((a) => a !== action);
   }
 
   /**
@@ -157,12 +164,12 @@ export class SessionRecoveryManager {
     try {
       await this.context.globalState.update(
         this.sessionKey,
-        JSON.stringify(this.currentSession)
+        JSON.stringify(this.currentSession),
       );
 
       // Save snapshot
       await this.saveSnapshot();
-      
+
       logger.debug('Session saved', 'Recovery');
     } catch (error) {
       logger.error('Failed to save session', 'Recovery', error);
@@ -175,7 +182,9 @@ export class SessionRecoveryManager {
   private async saveSnapshot(): Promise<void> {
     if (!this.context || !this.currentSession) return;
 
-    const snapshotsJson = this.context.globalState.get<string>(this.snapshotsKey);
+    const snapshotsJson = this.context.globalState.get<string>(
+      this.snapshotsKey,
+    );
     let snapshots: SessionState[] = [];
 
     if (snapshotsJson) {
@@ -196,7 +205,7 @@ export class SessionRecoveryManager {
 
     await this.context.globalState.update(
       this.snapshotsKey,
-      JSON.stringify(snapshots)
+      JSON.stringify(snapshots),
     );
   }
 
@@ -212,12 +221,12 @@ export class SessionRecoveryManager {
     try {
       const session = JSON.parse(sessionJson) as SessionState;
       session.timestamp = new Date(session.timestamp);
-      
+
       logger.info('Previous session loaded', 'Recovery', {
         id: session.id,
         hasActivePlan: !!session.activePlan,
         pendingChanges: session.pendingChanges.length,
-        incompleteActions: session.incompleteActions.length
+        incompleteActions: session.incompleteActions.length,
       });
 
       return session;
@@ -243,7 +252,7 @@ export class SessionRecoveryManager {
       return {
         needed: true,
         session,
-        reason: `Found ${session.incompleteActions.length} incomplete action(s)`
+        reason: `Found ${session.incompleteActions.length} incomplete action(s)`,
       };
     }
 
@@ -252,7 +261,7 @@ export class SessionRecoveryManager {
       return {
         needed: true,
         session,
-        reason: `Found ${session.pendingChanges.length} pending change(s)`
+        reason: `Found ${session.pendingChanges.length} pending change(s)`,
       };
     }
 
@@ -261,7 +270,7 @@ export class SessionRecoveryManager {
       return {
         needed: true,
         session,
-        reason: 'Active plan was interrupted'
+        reason: 'Active plan was interrupted',
       };
     }
 
@@ -274,7 +283,7 @@ export class SessionRecoveryManager {
   async restoreSession(session: SessionState): Promise<void> {
     this.currentSession = {
       ...session,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     logger.info('Session restored', 'Recovery', { id: session.id });
@@ -303,10 +312,13 @@ export class SessionRecoveryManager {
 
     this.saveTimer = setInterval(
       () => this.saveSession(),
-      this.config.intervalSeconds * 1000
+      this.config.intervalSeconds * 1000,
     );
 
-    logger.debug(`Auto-save started (${this.config.intervalSeconds}s interval)`, 'Recovery');
+    logger.debug(
+      `Auto-save started (${this.config.intervalSeconds}s interval)`,
+      'Recovery',
+    );
   }
 
   /**
@@ -331,7 +343,7 @@ export class SessionRecoveryManager {
    */
   updateConfig(config: Partial<RecoveryConfig>): void {
     this.config = { ...this.config, ...config };
-    
+
     if (this.config.enabled && !this.saveTimer) {
       this.startAutoSave();
     } else if (!this.config.enabled && this.saveTimer) {

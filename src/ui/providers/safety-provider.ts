@@ -11,7 +11,13 @@ export interface SafetyAlert {
   severity: 'critical' | 'warning' | 'info';
   title: string;
   description: string;
-  source: 'validator' | 'hallucination' | 'compliance' | 'plan-lock' | 'instruction' | 'security';
+  source:
+    | 'validator'
+    | 'hallucination'
+    | 'compliance'
+    | 'plan-lock'
+    | 'instruction'
+    | 'security';
   timestamp: Date;
   dismissible: boolean;
   actions?: Array<{ label: string; command: string }>;
@@ -28,38 +34,40 @@ export class SafetyProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
+    _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this._extensionUri]
+      localResourceRoots: [this._extensionUri],
     };
 
     webviewView.webview.html = this.getHtmlContent();
 
     // Handle messages from webview
-    webviewView.webview.onDidReceiveMessage(async (message: { type: string; id?: string; command?: string }) => {
-      switch (message.type) {
-        case 'dismiss':
-          if (message.id) {
-            this.dismissAlert(message.id);
-          }
-          break;
-        case 'action':
-          if (message.command) {
-            await vscode.commands.executeCommand(message.command);
-          }
-          break;
-        case 'clearAll':
-          this.clearAlerts();
-          break;
-        case 'refresh':
-          this.updateView();
-          break;
-      }
-    });
+    webviewView.webview.onDidReceiveMessage(
+      async (message: { type: string; id?: string; command?: string }) => {
+        switch (message.type) {
+          case 'dismiss':
+            if (message.id) {
+              this.dismissAlert(message.id);
+            }
+            break;
+          case 'action':
+            if (message.command) {
+              await vscode.commands.executeCommand(message.command);
+            }
+            break;
+          case 'clearAll':
+            this.clearAlerts();
+            break;
+          case 'refresh':
+            this.updateView();
+            break;
+        }
+      },
+    );
 
     // Initial render
     this.updateView();
@@ -72,7 +80,7 @@ export class SafetyProvider implements vscode.WebviewViewProvider {
     const newAlert: SafetyAlert = {
       ...alert,
       id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     this.alerts.unshift(newAlert);
@@ -82,20 +90,22 @@ export class SafetyProvider implements vscode.WebviewViewProvider {
       this.alerts = this.alerts.slice(0, this.MAX_ALERTS);
     }
 
-    logger.info(`Safety alert added: ${newAlert.title} (${newAlert.severity})`, 'SafetyProvider');
+    logger.info(
+      `Safety alert added: ${newAlert.title} (${newAlert.severity})`,
+      'SafetyProvider',
+    );
 
     this.updateView();
 
     // Show VS Code notification for critical alerts
     if (alert.severity === 'critical') {
-      vscode.window.showErrorMessage(
-        `Ender Safety: ${alert.title}`,
-        'View Details'
-      ).then((selection: string | undefined) => {
-        if (selection === 'View Details') {
-          vscode.commands.executeCommand('ender.safety.focus');
-        }
-      });
+      vscode.window
+        .showErrorMessage(`Ender Safety: ${alert.title}`, 'View Details')
+        .then((selection: string | undefined) => {
+          if (selection === 'View Details') {
+            vscode.commands.executeCommand('ender.safety.focus');
+          }
+        });
     } else if (alert.severity === 'warning') {
       vscode.window.showWarningMessage(`Ender: ${alert.title}`);
     }
@@ -105,7 +115,7 @@ export class SafetyProvider implements vscode.WebviewViewProvider {
    * Dismiss an alert by ID
    */
   dismissAlert(id: string): void {
-    const index = this.alerts.findIndex(a => a.id === id);
+    const index = this.alerts.findIndex((a) => a.id === id);
     if (index !== -1) {
       const alert = this.alerts[index];
       if (alert?.dismissible) {
@@ -120,7 +130,7 @@ export class SafetyProvider implements vscode.WebviewViewProvider {
    * Clear all dismissible alerts
    */
   clearAlerts(): void {
-    this.alerts = this.alerts.filter(a => !a.dismissible);
+    this.alerts = this.alerts.filter((a) => !a.dismissible);
     this.updateView();
     logger.info('All dismissible alerts cleared', 'SafetyProvider');
   }
@@ -136,14 +146,14 @@ export class SafetyProvider implements vscode.WebviewViewProvider {
    * Get alerts by severity
    */
   getAlertsBySeverity(severity: SafetyAlert['severity']): SafetyAlert[] {
-    return this.alerts.filter(a => a.severity === severity);
+    return this.alerts.filter((a) => a.severity === severity);
   }
 
   /**
    * Check if there are critical alerts
    */
   hasCriticalAlerts(): boolean {
-    return this.alerts.some(a => a.severity === 'critical');
+    return this.alerts.some((a) => a.severity === 'critical');
   }
 
   /**
@@ -153,10 +163,10 @@ export class SafetyProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this._view.webview.postMessage({
         type: 'update',
-        alerts: this.alerts.map(a => ({
+        alerts: this.alerts.map((a) => ({
           ...a,
-          timestamp: a.timestamp.toISOString()
-        }))
+          timestamp: a.timestamp.toISOString(),
+        })),
       });
     }
   }

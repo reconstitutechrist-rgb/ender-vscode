@@ -3,8 +3,17 @@
  * type-integrity, import-export, test-preservation
  */
 
-import { BaseValidator, ValidatorContext, extractImports } from './base-validator';
-import type { ValidationIssue } from '../types';
+import {
+  BaseValidator,
+  ValidatorContext,
+  extractImports,
+} from './base-validator';
+import type {
+  ValidationIssue,
+  TypeIntegrityResult,
+  ImportExportResult,
+  TestPreservationResult,
+} from '../types';
 
 /**
  * Type Integrity Validator
@@ -14,12 +23,58 @@ export class TypeIntegrityValidator extends BaseValidator {
   readonly name = 'type-integrity' as const;
   readonly stage = 'integrity' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<TypeIntegrityResult> {
+    const baseResult = await super.run(context);
+    // Transform issues to typed errors
+    const errors: TypeIntegrityResult['errors'] = baseResult.issues.map(
+      (issue) => ({
+        file: issue.file,
+        line: issue.line ?? 0,
+        message: issue.message,
+        expectedType: this.extractExpectedType(issue.code ?? ''),
+        actualType: this.extractActualType(issue.code ?? ''),
+      }),
+    );
+    return {
+      ...baseResult,
+      errors,
+    };
+  }
+
+  private extractExpectedType(code: string): string {
+    const typeMap: Record<string, string> = {
+      TYPE_IMPLICIT_ANY: 'explicit type annotation',
+      TYPE_NON_NULL_ASSERTION: 'null-safe access',
+      TYPE_AS_ANY: 'specific type',
+      TYPE_RAW_PROMISE: 'Promise<T>',
+      TYPE_RAW_ARRAY: 'Array<T> or T[]',
+      TYPE_LOOSE_NULL_CHECK: '=== null',
+      TYPE_LOOSE_UNDEFINED_CHECK: '=== undefined',
+    };
+    return typeMap[code] ?? 'proper type';
+  }
+
+  private extractActualType(code: string): string {
+    const typeMap: Record<string, string> = {
+      TYPE_IMPLICIT_ANY: 'implicit any',
+      TYPE_NON_NULL_ASSERTION: 'non-null assertion (!)',
+      TYPE_AS_ANY: 'as any',
+      TYPE_RAW_PROMISE: 'raw Promise',
+      TYPE_RAW_ARRAY: 'raw Array',
+      TYPE_LOOSE_NULL_CHECK: '== null',
+      TYPE_LOOSE_UNDEFINED_CHECK: '== undefined',
+    };
+    return typeMap[code] ?? 'unknown';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
       const ext = change.path.split('.').pop()?.toLowerCase();
-      
+
       if (!['ts', 'tsx'].includes(ext ?? '')) {
         continue;
       }
@@ -32,109 +87,135 @@ export class TypeIntegrityValidator extends BaseValidator {
     return issues;
   }
 
-  private checkTypeAnnotations(content: string, filePath: string): ValidationIssue[] {
+  private checkTypeAnnotations(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for implicit any in function parameters
-      const funcMatch = /(?:function\s+\w+|(?:const|let)\s+\w+\s*=\s*(?:async\s+)?)\(([^)]+)\)/.exec(line);
+      const funcMatch =
+        /(?:function\s+\w+|(?:const|let)\s+\w+\s*=\s*(?:async\s+)?)\(([^)]+)\)/.exec(
+          line,
+        );
       if (funcMatch) {
         const params = funcMatch[1];
         if (params && !/:\s*\w/.test(params) && params.trim() !== '') {
-          issues.push(this.createIssue(
-            filePath,
-            `Function parameters lack type annotations`,
-            'warning',
-            { line: i + 1, code: 'TYPE_IMPLICIT_ANY' }
-          ));
+          issues.push(
+            this.createIssue(
+              filePath,
+              `Function parameters lack type annotations`,
+              'warning',
+              { line: i + 1, code: 'TYPE_IMPLICIT_ANY' },
+            ),
+          );
         }
       }
 
       // Check for non-null assertions that might be risky
       if (/\w+!\./.test(line) || /\w+!\[/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Non-null assertion (!) used - ensure value cannot be null`,
-          'info',
-          { line: i + 1, code: 'TYPE_NON_NULL_ASSERTION' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Non-null assertion (!) used - ensure value cannot be null`,
+            'info',
+            { line: i + 1, code: 'TYPE_NON_NULL_ASSERTION' },
+          ),
+        );
       }
 
       // Check for type assertions that might hide errors
       if (/as\s+any\b/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Type assertion to 'any' bypasses type checking`,
-          'warning',
-          { line: i + 1, code: 'TYPE_AS_ANY' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Type assertion to 'any' bypasses type checking`,
+            'warning',
+            { line: i + 1, code: 'TYPE_AS_ANY' },
+          ),
+        );
       }
     }
 
     return issues;
   }
 
-  private checkGenericUsage(content: string, filePath: string): ValidationIssue[] {
+  private checkGenericUsage(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for raw Promise without type parameter
       if (/:\s*Promise\s*[^<]/.test(line) || /new\s+Promise\s*\(/.test(line)) {
         if (!/Promise</.test(line)) {
-          issues.push(this.createIssue(
-            filePath,
-            `Promise should have type parameter: Promise<T>`,
-            'warning',
-            { line: i + 1, code: 'TYPE_RAW_PROMISE' }
-          ));
+          issues.push(
+            this.createIssue(
+              filePath,
+              `Promise should have type parameter: Promise<T>`,
+              'warning',
+              { line: i + 1, code: 'TYPE_RAW_PROMISE' },
+            ),
+          );
         }
       }
 
       // Check for raw Array without type
       if (/:\s*Array\s*[^<]/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Array should have type parameter: Array<T> or T[]`,
-          'warning',
-          { line: i + 1, code: 'TYPE_RAW_ARRAY' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Array should have type parameter: Array<T> or T[]`,
+            'warning',
+            { line: i + 1, code: 'TYPE_RAW_ARRAY' },
+          ),
+        );
       }
     }
 
     return issues;
   }
 
-  private checkNullChecks(content: string, filePath: string): ValidationIssue[] {
+  private checkNullChecks(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for == null or != null (should use === or !==)
       if (/[^!=]=\s*null\b/.test(line) && !/===\s*null/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Use === null instead of == null`,
-          'warning',
-          { line: i + 1, code: 'TYPE_LOOSE_NULL_CHECK' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Use === null instead of == null`,
+            'warning',
+            { line: i + 1, code: 'TYPE_LOOSE_NULL_CHECK' },
+          ),
+        );
       }
 
       // Check for loose equality with undefined
       if (/[^!=]=\s*undefined\b/.test(line) && !/===\s*undefined/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Use === undefined instead of == undefined`,
-          'warning',
-          { line: i + 1, code: 'TYPE_LOOSE_UNDEFINED_CHECK' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Use === undefined instead of == undefined`,
+            'warning',
+            { line: i + 1, code: 'TYPE_LOOSE_UNDEFINED_CHECK' },
+          ),
+        );
       }
     }
 
@@ -150,16 +231,42 @@ export class ImportExportValidator extends BaseValidator {
   readonly name = 'import-export' as const;
   readonly stage = 'integrity' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<ImportExportResult> {
+    const baseResult = await super.run(context);
+    // Transform issues to typed import/export issues
+    const importExportIssues: ImportExportResult['importExportIssues'] =
+      baseResult.issues.map((issue) => ({
+        file: issue.file,
+        type: this.mapIssueType(issue.code ?? ''),
+        details: issue.message,
+        affectedFiles: [issue.file],
+      }));
+    return {
+      ...baseResult,
+      importExportIssues,
+    };
+  }
+
+  private mapIssueType(
+    code: string,
+  ): 'broken_import' | 'missing_export' | 'circular_dependency' {
+    if (code.includes('CIRCULAR')) return 'circular_dependency';
+    if (code.includes('NOT_FOUND')) return 'broken_import';
+    return 'missing_export';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
     const allFiles = new Set<string>([
-      ...context.changes.map(c => c.path),
-      ...context.existingFiles.keys()
+      ...context.changes.map((c) => c.path),
+      ...context.existingFiles.keys(),
     ]);
 
     // Build export map
     const exports = new Map<string, Set<string>>();
-    
+
     for (const change of context.changes) {
       const fileExports = this.extractExports(change.content);
       exports.set(change.path, fileExports);
@@ -168,7 +275,7 @@ export class ImportExportValidator extends BaseValidator {
     // Check imports
     for (const change of context.changes) {
       const imports = extractImports(change.content);
-      
+
       for (const imp of imports) {
         // Skip node_modules and built-in modules
         if (!imp.module.startsWith('.') && !imp.module.startsWith('/')) {
@@ -177,30 +284,39 @@ export class ImportExportValidator extends BaseValidator {
 
         // Resolve relative import
         const resolvedPath = this.resolveImport(change.path, imp.module);
-        
+
         // Check if file exists
-        if (!allFiles.has(resolvedPath) && 
-            !allFiles.has(resolvedPath + '.ts') && 
-            !allFiles.has(resolvedPath + '.tsx') &&
-            !allFiles.has(resolvedPath + '/index.ts')) {
-          issues.push(this.createIssue(
-            change.path,
-            `Import '${imp.module}' - file not found`,
-            'error',
-            { line: imp.line, code: 'IMPORT_FILE_NOT_FOUND' }
-          ));
+        if (
+          !allFiles.has(resolvedPath) &&
+          !allFiles.has(resolvedPath + '.ts') &&
+          !allFiles.has(resolvedPath + '.tsx') &&
+          !allFiles.has(resolvedPath + '/index.ts')
+        ) {
+          issues.push(
+            this.createIssue(
+              change.path,
+              `Import '${imp.module}' - file not found`,
+              'error',
+              { line: imp.line, code: 'IMPORT_FILE_NOT_FOUND' },
+            ),
+          );
         }
       }
 
       // Check for circular dependencies
-      const circularDeps = this.detectCircularDependencies(change.path, context.changes);
+      const circularDeps = this.detectCircularDependencies(
+        change.path,
+        context.changes,
+      );
       if (circularDeps.length > 0) {
-        issues.push(this.createIssue(
-          change.path,
-          `Circular dependency detected: ${circularDeps.join(' -> ')}`,
-          'warning',
-          { code: 'IMPORT_CIRCULAR' }
-        ));
+        issues.push(
+          this.createIssue(
+            change.path,
+            `Circular dependency detected: ${circularDeps.join(' -> ')}`,
+            'warning',
+            { code: 'IMPORT_CIRCULAR' },
+          ),
+        );
       }
     }
 
@@ -209,9 +325,10 @@ export class ImportExportValidator extends BaseValidator {
 
   private extractExports(content: string): Set<string> {
     const exports = new Set<string>();
-    
+
     // Named exports
-    const namedExportRegex = /export\s+(?:const|let|var|function|class|interface|type|enum)\s+(\w+)/g;
+    const namedExportRegex =
+      /export\s+(?:const|let|var|function|class|interface|type|enum)\s+(\w+)/g;
     let match;
     while ((match = namedExportRegex.exec(content)) !== null) {
       if (match[1]) exports.add(match[1]);
@@ -220,8 +337,13 @@ export class ImportExportValidator extends BaseValidator {
     // Export statements
     const exportStatementRegex = /export\s*{\s*([^}]+)\s*}/g;
     while ((match = exportStatementRegex.exec(content)) !== null) {
-      const names = match[1]?.split(',').map(n => n.trim().split(/\s+as\s+/)[0]?.trim());
-      names?.forEach(n => n && exports.add(n));
+      const names = match[1]?.split(',').map((n) =>
+        n
+          .trim()
+          .split(/\s+as\s+/)[0]
+          ?.trim(),
+      );
+      names?.forEach((n) => n && exports.add(n));
     }
 
     // Default export
@@ -255,14 +377,14 @@ export class ImportExportValidator extends BaseValidator {
 
   private detectCircularDependencies(
     startFile: string,
-    changes: Array<{ path: string; content: string }>
+    changes: Array<{ path: string; content: string }>,
   ): string[] {
     const fileImports = new Map<string, string[]>();
-    
+
     for (const change of changes) {
       const imports = extractImports(change.content)
-        .filter(i => i.module.startsWith('.'))
-        .map(i => this.resolveImport(change.path, i.module));
+        .filter((i) => i.module.startsWith('.'))
+        .map((i) => this.resolveImport(change.path, i.module));
       fileImports.set(change.path, imports);
     }
 
@@ -300,40 +422,76 @@ export class TestPreservationValidator extends BaseValidator {
   readonly name = 'test-preservation' as const;
   readonly stage = 'integrity' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<TestPreservationResult> {
+    const baseResult = await super.run(context);
+    // Transform issues to test preservation result
+    // Note: This validator doesn't actually run tests, it checks for test-related issues
+    const failures: TestPreservationResult['failures'] = baseResult.issues
+      .filter(
+        (issue) =>
+          issue.code === 'TEST_ONLY' ||
+          issue.code === 'TEST_EMPTY' ||
+          issue.code === 'TEST_NO_ASSERTIONS',
+      )
+      .map((issue) => ({
+        testFile: issue.file,
+        testName: 'unknown',
+        error: issue.message,
+      }));
+
+    return {
+      ...baseResult,
+      testsRun: 0, // Static validator, doesn't run actual tests
+      testsPassed: 0,
+      testsFailed: failures.length,
+      failures,
+    };
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     // Check if any test files were modified
-    const modifiedTestFiles = context.changes.filter(c => 
-      c.path.includes('.test.') || 
-      c.path.includes('.spec.') ||
-      c.path.includes('__tests__')
+    const modifiedTestFiles = context.changes.filter(
+      (c) =>
+        c.path.includes('.test.') ||
+        c.path.includes('.spec.') ||
+        c.path.includes('__tests__'),
     );
 
     // Check if source files have corresponding tests
-    const sourceFiles = context.changes.filter(c =>
-      !c.path.includes('.test.') && 
-      !c.path.includes('.spec.') &&
-      !c.path.includes('__tests__') &&
-      (c.path.endsWith('.ts') || c.path.endsWith('.tsx') || c.path.endsWith('.js') || c.path.endsWith('.jsx'))
+    const sourceFiles = context.changes.filter(
+      (c) =>
+        !c.path.includes('.test.') &&
+        !c.path.includes('.spec.') &&
+        !c.path.includes('__tests__') &&
+        (c.path.endsWith('.ts') ||
+          c.path.endsWith('.tsx') ||
+          c.path.endsWith('.js') ||
+          c.path.endsWith('.jsx')),
     );
 
     for (const source of sourceFiles) {
       const baseName = source.path.replace(/\.(ts|tsx|js|jsx)$/, '');
-      const hasTest = [...context.existingFiles.keys()].some(f =>
-        f.includes(`${baseName}.test.`) ||
-        f.includes(`${baseName}.spec.`) ||
-        f.includes(`__tests__/${baseName.split('/').pop()}`)
+      const hasTest = [...context.existingFiles.keys()].some(
+        (f) =>
+          f.includes(`${baseName}.test.`) ||
+          f.includes(`${baseName}.spec.`) ||
+          f.includes(`__tests__/${baseName.split('/').pop()}`),
       );
 
       // Only warn if the file likely needs tests (has exports, functions)
       if (!hasTest && this.likelyNeedsTests(source.content)) {
-        issues.push(this.createIssue(
-          source.path,
-          `Modified file has no corresponding test file`,
-          'info',
-          { code: 'TEST_NO_TEST_FILE' }
-        ));
+        issues.push(
+          this.createIssue(
+            source.path,
+            `Modified file has no corresponding test file`,
+            'info',
+            { code: 'TEST_NO_TEST_FILE' },
+          ),
+        );
       }
     }
 
@@ -347,56 +505,71 @@ export class TestPreservationValidator extends BaseValidator {
 
   private likelyNeedsTests(content: string): boolean {
     // Has exported functions or classes
-    return /export\s+(async\s+)?function/.test(content) ||
-           /export\s+class/.test(content) ||
-           /export\s+const\s+\w+\s*=\s*(?:async\s+)?\(/.test(content);
+    return (
+      /export\s+(async\s+)?function/.test(content) ||
+      /export\s+class/.test(content) ||
+      /export\s+const\s+\w+\s*=\s*(?:async\s+)?\(/.test(content)
+    );
   }
 
-  private checkTestQuality(content: string, filePath: string): ValidationIssue[] {
+  private checkTestQuality(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     // Check for skipped tests
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       if (/\b(it|test|describe)\.skip\s*\(/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Skipped test found - ensure this is intentional`,
-          'warning',
-          { line: i + 1, code: 'TEST_SKIPPED' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Skipped test found - ensure this is intentional`,
+            'warning',
+            { line: i + 1, code: 'TEST_SKIPPED' },
+          ),
+        );
       }
 
       if (/\b(it|test|describe)\.only\s*\(/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `.only() will skip other tests - remove before committing`,
-          'error',
-          { line: i + 1, code: 'TEST_ONLY' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `.only() will skip other tests - remove before committing`,
+            'error',
+            { line: i + 1, code: 'TEST_ONLY' },
+          ),
+        );
       }
 
       // Check for empty test bodies
-      if (/\b(it|test)\s*\([^)]+,\s*(?:async\s*)?\(\s*\)\s*=>\s*{\s*}\s*\)/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Empty test body`,
-          'warning',
-          { line: i + 1, code: 'TEST_EMPTY' }
-        ));
+      if (
+        /\b(it|test)\s*\([^)]+,\s*(?:async\s*)?\(\s*\)\s*=>\s*{\s*}\s*\)/.test(
+          line,
+        )
+      ) {
+        issues.push(
+          this.createIssue(filePath, `Empty test body`, 'warning', {
+            line: i + 1,
+            code: 'TEST_EMPTY',
+          }),
+        );
       }
     }
 
     // Check for assertions
     if (!/expect\s*\(|assert\.|should\./.test(content)) {
-      issues.push(this.createIssue(
-        filePath,
-        `Test file contains no assertions`,
-        'warning',
-        { code: 'TEST_NO_ASSERTIONS' }
-      ));
+      issues.push(
+        this.createIssue(
+          filePath,
+          `Test file contains no assertions`,
+          'warning',
+          { code: 'TEST_NO_ASSERTIONS' },
+        ),
+      );
     }
 
     return issues;

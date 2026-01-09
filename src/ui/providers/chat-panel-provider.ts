@@ -4,12 +4,12 @@
  */
 
 import * as vscode from 'vscode';
-import { generateId, logger } from '../../utils';
-import type { ConversationMessage, AgentType, AgentStatus } from '../../types';
+import { generateId } from '../../utils';
+import type { ConversationMessage, AgentType } from '../../types';
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'ender.chat';
-  
+
   private _view?: vscode.WebviewView;
   private _messages: ConversationMessage[] = [];
   private _currentAgent: AgentType | null = null;
@@ -17,25 +17,25 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
-    private readonly _onSendMessage?: (message: string) => void
+    private readonly _onSendMessage?: (message: string) => void,
   ) {}
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
-    context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
+    _context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this._extensionUri]
+      localResourceRoots: [this._extensionUri],
     };
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
     // Handle messages from the webview
-    webviewView.webview.onDidReceiveMessage(data => {
+    webviewView.webview.onDidReceiveMessage((data) => {
       switch (data.type) {
         case 'sendMessage':
           if (this._onSendMessage) {
@@ -64,30 +64,35 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       id: generateId(),
       role: 'user',
       content,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     this._messages.push(message);
     this._updateWebview();
-    
+
     return message;
   }
 
   /**
    * Add an assistant message
    */
-  public addAssistantMessage(content: string, agent?: AgentType): ConversationMessage {
+  public addAssistantMessage(
+    content: string,
+    agent?: AgentType,
+  ): ConversationMessage {
     const message: ConversationMessage = {
       id: generateId(),
       role: 'assistant',
       content,
       timestamp: new Date(),
-      agent
     };
+    if (agent) {
+      message.agent = agent;
+    }
 
     this._messages.push(message);
     this._updateWebview();
-    
+
     return message;
   }
 
@@ -140,7 +145,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this._view.webview.postMessage({
         type: 'updateMessages',
-        messages: this._messages
+        messages: this._messages,
       });
     }
   }
@@ -152,7 +157,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this._view.webview.postMessage({
         type: 'updateAgent',
-        agent: this._currentAgent
+        agent: this._currentAgent,
       });
     }
   }
@@ -164,7 +169,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this._view.webview.postMessage({
         type: 'updateProcessing',
-        isProcessing: this._isProcessing
+        isProcessing: this._isProcessing,
       });
     }
   }
@@ -173,8 +178,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    * Generate HTML for the webview
    */
   private _getHtmlForWebview(webview: vscode.Webview): string {
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'resources', 'chat.css')
+    // Style URI available for external CSS (using void to suppress unused warning)
+    void webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'resources', 'chat.css'),
     );
 
     const nonce = generateId();

@@ -28,7 +28,7 @@ const DEFAULT_CONFIG: SandboxConfig = {
   timeout: 5000,
   memoryLimit: 512 * 1024 * 1024, // 512MB
   networkAccess: false,
-  fileSystemAccess: false
+  fileSystemAccess: false,
 };
 
 export class SandboxExecutor {
@@ -41,16 +41,26 @@ export class SandboxExecutor {
   /**
    * Execute code in a sandboxed environment
    */
-  async execute(code: string, language: string, timeout?: number): Promise<ExecutionResult> {
+  async execute(
+    code: string,
+    language: string,
+    timeout?: number,
+  ): Promise<ExecutionResult> {
     const startTime = Date.now();
     const effectiveTimeout = timeout ?? this.config.timeout;
 
-    logger.info(`Executing ${language} code in sandbox (timeout: ${effectiveTimeout}ms)`, 'Sandbox');
+    logger.info(
+      `Executing ${language} code in sandbox (timeout: ${effectiveTimeout}ms)`,
+      'Sandbox',
+    );
 
     try {
       // Create temp file for code
       const tempDir = os.tmpdir();
-      const tempFile = path.join(tempDir, `ender-sandbox-${Date.now()}.${this.getExtension(language)}`);
+      const tempFile = path.join(
+        tempDir,
+        `ender-sandbox-${Date.now()}.${this.getExtension(language)}`,
+      );
 
       fs.writeFileSync(tempFile, code, 'utf-8');
       logger.debug(`Created temp file: ${tempFile}`, 'Sandbox');
@@ -62,12 +72,16 @@ export class SandboxExecutor {
           success: false,
           output: '',
           error: `Unsupported language: ${language}`,
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
         };
       }
 
       // Execute with timeout
-      const result = await this.runProcess(runner.command, runner.args, effectiveTimeout);
+      const result = await this.runProcess(
+        runner.command,
+        runner.args,
+        effectiveTimeout,
+      );
 
       // Cleanup temp file
       try {
@@ -81,7 +95,7 @@ export class SandboxExecutor {
         success: result.exitCode === 0,
         output: result.stdout,
         duration: Date.now() - startTime,
-        exitCode: result.exitCode
+        exitCode: result.exitCode,
       };
 
       if (result.stderr) {
@@ -90,14 +104,15 @@ export class SandboxExecutor {
 
       return execResult;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Execution failed';
+      const message =
+        error instanceof Error ? error.message : 'Execution failed';
       logger.error(`Sandbox execution failed: ${message}`, 'Sandbox');
 
       return {
         success: false,
         output: '',
         error: message,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
       };
     }
   }
@@ -117,7 +132,7 @@ export class SandboxExecutor {
       php: 'php',
       c: 'c',
       cpp: 'cpp',
-      csharp: 'cs'
+      csharp: 'cs',
     };
     return extensions[language.toLowerCase()] || 'txt';
   }
@@ -125,15 +140,21 @@ export class SandboxExecutor {
   /**
    * Get runner command for language
    */
-  private getRunner(language: string, file: string): { command: string; args: string[] } | null {
+  private getRunner(
+    language: string,
+    file: string,
+  ): { command: string; args: string[] } | null {
     const isWindows = process.platform === 'win32';
     const runners: Record<string, { command: string; args: string[] }> = {
       javascript: { command: 'node', args: [file] },
-      typescript: { command: 'npx', args: ['ts-node', '--transpile-only', file] },
+      typescript: {
+        command: 'npx',
+        args: ['ts-node', '--transpile-only', file],
+      },
       python: { command: isWindows ? 'python' : 'python3', args: [file] },
       go: { command: 'go', args: ['run', file] },
       ruby: { command: 'ruby', args: [file] },
-      php: { command: 'php', args: [file] }
+      php: { command: 'php', args: [file] },
     };
 
     return runners[language.toLowerCase()] || null;
@@ -145,7 +166,7 @@ export class SandboxExecutor {
   private runProcess(
     command: string,
     args: string[],
-    timeout: number
+    timeout: number,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve, reject) => {
       let stdout = '';
@@ -155,12 +176,16 @@ export class SandboxExecutor {
       // Build environment - restrict network if configured
       const env: NodeJS.ProcessEnv = this.config.networkAccess
         ? { ...process.env }
-        : { PATH: process.env['PATH'], HOME: process.env['HOME'], TEMP: process.env['TEMP'] };
+        : {
+            PATH: process.env['PATH'],
+            HOME: process.env['HOME'],
+            TEMP: process.env['TEMP'],
+          };
 
       const proc: ChildProcess = spawn(command, args, {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: process.platform === 'win32'
+        shell: process.platform === 'win32',
       });
 
       // Set up timeout
@@ -193,7 +218,7 @@ export class SandboxExecutor {
           resolve({
             stdout: stdout.trim(),
             stderr: stderr.trim(),
-            exitCode: code ?? 1
+            exitCode: code ?? 1,
           });
         }
       });

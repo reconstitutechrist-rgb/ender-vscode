@@ -12,7 +12,11 @@ export class PlanLockManager {
   /**
    * Create a lock for an approved plan
    */
-  createLock(plan: Plan, files?: FileContent[], userId: 'user' | 'conductor' = 'user'): void {
+  createLock(
+    plan: Plan,
+    files?: FileContent[],
+    userId: 'user' | 'conductor' = 'user',
+  ): void {
     const allowedFunctions = this.buildAllowedFunctions(plan, files ?? []);
 
     this.activeLock = {
@@ -21,16 +25,22 @@ export class PlanLockManager {
       lockedBy: userId,
       allowedFiles: [...plan.affectedFiles],
       allowedFunctions,
-      checksum: this.calculatePlanChecksum(plan)
+      checksum: this.calculatePlanChecksum(plan),
     };
 
-    logger.info(`Plan locked: ${plan.id}, ${allowedFunctions.size} files with function restrictions`, 'PlanLock');
+    logger.info(
+      `Plan locked: ${plan.id}, ${allowedFunctions.size} files with function restrictions`,
+      'PlanLock',
+    );
   }
 
   /**
    * Build the allowed functions map from plan and files
    */
-  private buildAllowedFunctions(plan: Plan, files: FileContent[]): Map<string, string[]> {
+  private buildAllowedFunctions(
+    plan: Plan,
+    files: FileContent[],
+  ): Map<string, string[]> {
     const allowedFunctions = new Map<string, string[]>();
 
     // Extract from plan tasks that have targetFile and targetFunction
@@ -53,10 +63,11 @@ export class PlanLockManager {
       if (allowedFunctions.has(filePath)) continue;
 
       // Find file content
-      const file = files.find(f =>
-        f.path === filePath ||
-        f.path.endsWith(filePath) ||
-        filePath.endsWith(f.path)
+      const file = files.find(
+        (f) =>
+          f.path === filePath ||
+          f.path.endsWith(filePath) ||
+          filePath.endsWith(f.path),
       );
 
       if (file) {
@@ -89,8 +100,24 @@ export class PlanLockManager {
     ];
 
     const keywords = new Set([
-      'if', 'else', 'for', 'while', 'switch', 'case', 'return', 'new', 'class',
-      'constructor', 'get', 'set', 'try', 'catch', 'finally', 'throw', 'import', 'export'
+      'if',
+      'else',
+      'for',
+      'while',
+      'switch',
+      'case',
+      'return',
+      'new',
+      'class',
+      'constructor',
+      'get',
+      'set',
+      'try',
+      'catch',
+      'finally',
+      'throw',
+      'import',
+      'export',
     ]);
 
     for (const regex of patterns) {
@@ -130,8 +157,9 @@ export class PlanLockManager {
     if (this.activeLock.allowedFiles.includes(normalizedPath)) return true;
 
     // Check partial match (file at end of path)
-    return this.activeLock.allowedFiles.some(allowed =>
-      normalizedPath.endsWith(allowed) || allowed.endsWith(normalizedPath)
+    return this.activeLock.allowedFiles.some(
+      (allowed) =>
+        normalizedPath.endsWith(allowed) || allowed.endsWith(normalizedPath),
     );
   }
 
@@ -151,8 +179,11 @@ export class PlanLockManager {
     const normalizedPath = filePath.replace(/\\/g, '/');
 
     for (const [path, funcs] of this.activeLock.allowedFunctions) {
-      if (normalizedPath.endsWith(path) || path.endsWith(normalizedPath) ||
-          normalizedPath === path) {
+      if (
+        normalizedPath.endsWith(path) ||
+        path.endsWith(normalizedPath) ||
+        normalizedPath === path
+      ) {
         // If no specific functions listed, all functions in file are allowed
         if (funcs.length === 0) return true;
         // Otherwise, check if function is in the allowed list
@@ -202,22 +233,22 @@ export class PlanLockManager {
   private calculatePlanChecksum(plan: Plan): string {
     const content = JSON.stringify({
       id: plan.id,
-      phases: plan.phases.map(p => ({
+      phases: plan.phases.map((p) => ({
         title: p.title,
-        tasks: p.tasks.map(t => ({
+        tasks: p.tasks.map((t) => ({
           description: t.description,
           targetFile: t.targetFile,
-          targetFunction: t.targetFunction
-        }))
+          targetFunction: t.targetFunction,
+        })),
       })),
-      affectedFiles: plan.affectedFiles
+      affectedFiles: plan.affectedFiles,
     });
 
     // Simple hash
     let hash = 0;
     for (let i = 0; i < content.length; i++) {
       const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
     return hash.toString(16);

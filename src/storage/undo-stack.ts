@@ -3,7 +3,7 @@
  * Manages multi-level undo operations
  */
 
-import { writeFile, readFile, fileExists, createSnapshot } from '../utils/file-utils';
+import { writeFile, fileExists, createSnapshot } from '../utils/file-utils';
 import { logger, generateId } from '../utils';
 import { SqliteClient } from './sqlite-client';
 import type { UndoEntry, FileSnapshot } from '../types';
@@ -23,7 +23,7 @@ export class UndoStack {
     this.config = {
       maxLevels: 10,
       persistToDisk: true,
-      ...config
+      ...config,
     };
   }
 
@@ -39,7 +39,7 @@ export class UndoStack {
     phaseId?: string;
   }): Promise<UndoEntry> {
     const sequence = this.db.getNextUndoSequence();
-    
+
     const undoEntry: UndoEntry = {
       id: generateId(),
       sequence,
@@ -48,9 +48,13 @@ export class UndoStack {
       filesAfter: entry.filesAfter,
       description: entry.description,
       createdAt: new Date(),
-      planId: entry.planId,
-      phaseId: entry.phaseId
     };
+    if (entry.planId) {
+      undoEntry.planId = entry.planId;
+    }
+    if (entry.phaseId) {
+      undoEntry.phaseId = entry.phaseId;
+    }
 
     // Persist to database
     if (this.config.persistToDisk) {
@@ -67,7 +71,7 @@ export class UndoStack {
     logger.debug(`Pushed to undo stack: ${entry.description}`, 'Undo', {
       sequence,
       actionType: entry.actionType,
-      fileCount: entry.filesBefore.length
+      fileCount: entry.filesBefore.length,
     });
 
     return undoEntry;
@@ -83,7 +87,7 @@ export class UndoStack {
     errors: string[];
   }> {
     // Get latest entry
-    const entry = this.config.persistToDisk 
+    const entry = this.config.persistToDisk
       ? this.db.popUndo()
       : this.inMemoryStack.pop();
 
@@ -91,7 +95,7 @@ export class UndoStack {
       return {
         success: false,
         restoredFiles: [],
-        errors: ['Nothing to undo']
+        errors: ['Nothing to undo'],
       };
     }
 
@@ -121,7 +125,7 @@ export class UndoStack {
 
     // Remove from in-memory stack if we used database
     if (this.config.persistToDisk) {
-      const idx = this.inMemoryStack.findIndex(e => e.id === entry.id);
+      const idx = this.inMemoryStack.findIndex((e) => e.id === entry.id);
       if (idx !== -1) {
         this.inMemoryStack.splice(idx, 1);
       }
@@ -131,7 +135,7 @@ export class UndoStack {
       success: errors.length === 0,
       entry,
       restoredFiles,
-      errors
+      errors,
     };
   }
 
@@ -195,7 +199,7 @@ export class UndoStack {
     options?: {
       planId?: string;
       phaseId?: string;
-    }
+    },
   ): Promise<{
     filesBefore: FileSnapshot[];
     record: (filesAfter: FileSnapshot[]) => {
@@ -209,19 +213,33 @@ export class UndoStack {
   }> {
     // Capture current state
     const filesBefore = await Promise.all(
-      filePaths.map(p => createSnapshot(p))
+      filePaths.map((p) => createSnapshot(p)),
     );
 
     return {
       filesBefore,
-      record: (filesAfter: FileSnapshot[]) => ({
-        actionType,
-        description,
-        filesBefore,
-        filesAfter,
-        planId: options?.planId,
-        phaseId: options?.phaseId
-      })
+      record: (filesAfter: FileSnapshot[]) => {
+        const result: {
+          actionType: string;
+          filesBefore: FileSnapshot[];
+          filesAfter: FileSnapshot[];
+          description: string;
+          planId?: string;
+          phaseId?: string;
+        } = {
+          actionType,
+          description,
+          filesBefore,
+          filesAfter,
+        };
+        if (options?.planId) {
+          result.planId = options.planId;
+        }
+        if (options?.phaseId) {
+          result.phaseId = options.phaseId;
+        }
+        return result;
+      },
     };
   }
 
@@ -230,7 +248,7 @@ export class UndoStack {
    */
   getUndosByPlan(planId: string): UndoEntry[] {
     const stack = this.getStack();
-    return stack.filter(entry => entry.planId === planId);
+    return stack.filter((entry) => entry.planId === planId);
   }
 
   /**
@@ -242,22 +260,25 @@ export class UndoStack {
     errors: string[];
   }> {
     const planEntries = this.getUndosByPlan(planId);
-    
+
     if (planEntries.length === 0) {
       return {
         success: true,
         undoneCount: 0,
-        errors: []
+        errors: [],
       };
     }
 
-    logger.info(`Undoing ${planEntries.length} entries for plan ${planId}`, 'Undo');
+    logger.info(
+      `Undoing ${planEntries.length} entries for plan ${planId}`,
+      'Undo',
+    );
 
     const allErrors: string[] = [];
     let undoneCount = 0;
 
     // Undo in reverse order (most recent first)
-    for (const entry of planEntries) {
+    for (const _entry of planEntries) {
       const result = await this.undo();
       if (result.success) {
         undoneCount++;
@@ -269,7 +290,7 @@ export class UndoStack {
     return {
       success: allErrors.length === 0,
       undoneCount,
-      errors: allErrors
+      errors: allErrors,
     };
   }
 
@@ -284,24 +305,42 @@ export class UndoStack {
     byPlan: Record<string, number>;
   } {
     const stack = this.getStack();
-    
+
     const byActionType: Record<string, number> = {};
     const byPlan: Record<string, number> = {};
 
     for (const entry of stack) {
-      byActionType[entry.actionType] = (byActionType[entry.actionType] || 0) + 1;
-      
+      byActionType[entry.actionType] =
+        (byActionType[entry.actionType] || 0) + 1;
+
       if (entry.planId) {
         byPlan[entry.planId] = (byPlan[entry.planId] || 0) + 1;
       }
     }
 
-    return {
+    const result: {
+      totalEntries: number;
+      oldestEntry?: Date;
+      newestEntry?: Date;
+      byActionType: Record<string, number>;
+      byPlan: Record<string, number>;
+    } = {
       totalEntries: stack.length,
-      oldestEntry: stack.length > 0 ? stack[stack.length - 1]?.createdAt : undefined,
-      newestEntry: stack.length > 0 ? stack[0]?.createdAt : undefined,
       byActionType,
-      byPlan
+      byPlan,
     };
+
+    if (stack.length > 0) {
+      const oldest = stack[stack.length - 1]?.createdAt;
+      const newest = stack[0]?.createdAt;
+      if (oldest) {
+        result.oldestEntry = oldest;
+      }
+      if (newest) {
+        result.newestEntry = newest;
+      }
+    }
+
+    return result;
   }
 }

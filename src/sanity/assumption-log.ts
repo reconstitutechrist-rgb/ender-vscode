@@ -15,7 +15,7 @@ export class AssumptionTracker {
   addAssumption(
     assumption: string,
     category: Assumption['category'],
-    risk: Assumption['risk'] = 'medium'
+    risk: Assumption['risk'] = 'medium',
   ): Assumption {
     const entry: Assumption = {
       id: generateId(),
@@ -23,7 +23,7 @@ export class AssumptionTracker {
       category,
       verified: false,
       risk,
-      createdAt: new Date()
+      createdAt: new Date(),
     };
 
     this.assumptions.set(entry.id, entry);
@@ -37,24 +37,53 @@ export class AssumptionTracker {
    */
   extractAssumptions(text: string): Assumption[] {
     const extracted: Assumption[] = [];
-    
+
     // Patterns that indicate assumptions
     const patterns = [
       // Technical assumptions
-      { regex: /(?:assuming|assume|presuming|presume)\s+(?:that\s+)?(.+?)(?:\.|,|$)/gi, category: 'technical' as const },
-      { regex: /(?:I'll|I will)\s+(?:assume|presume)\s+(.+?)(?:\.|,|$)/gi, category: 'technical' as const },
-      
+      {
+        regex:
+          /(?:assuming|assume|presuming|presume)\s+(?:that\s+)?(.+?)(?:\.|,|$)/gi,
+        category: 'technical' as const,
+      },
+      {
+        regex: /(?:I'll|I will)\s+(?:assume|presume)\s+(.+?)(?:\.|,|$)/gi,
+        category: 'technical' as const,
+      },
+
       // Requirement assumptions
-      { regex: /(?:I understand|understood|interpreting)\s+(?:that\s+)?(.+?)(?:\.|,|$)/gi, category: 'requirement' as const },
-      { regex: /(?:based on|given)\s+(?:that\s+)?(.+?)(?:\.|,|$)/gi, category: 'requirement' as const },
-      
+      {
+        regex:
+          /(?:I understand|understood|interpreting)\s+(?:that\s+)?(.+?)(?:\.|,|$)/gi,
+        category: 'requirement' as const,
+      },
+      {
+        regex: /(?:based on|given)\s+(?:that\s+)?(.+?)(?:\.|,|$)/gi,
+        category: 'requirement' as const,
+      },
+
       // Environment assumptions
-      { regex: /(?:expecting|expect)\s+(?:that\s+)?(.+?)(?:to be|is)\s+(.+?)(?:\.|,|$)/gi, category: 'environment' as const },
-      { regex: /(?:configured|set up)\s+(?:with|for)\s+(.+?)(?:\.|,|$)/gi, category: 'environment' as const },
-      
+      {
+        regex:
+          /(?:expecting|expect)\s+(?:that\s+)?(.+?)(?:to be|is)\s+(.+?)(?:\.|,|$)/gi,
+        category: 'environment' as const,
+      },
+      {
+        regex: /(?:configured|set up)\s+(?:with|for)\s+(.+?)(?:\.|,|$)/gi,
+        category: 'environment' as const,
+      },
+
       // User intent assumptions
-      { regex: /(?:I think|believe|seems like)\s+(?:you want|you need|the goal is)\s+(.+?)(?:\.|,|$)/gi, category: 'user_intent' as const },
-      { regex: /(?:it looks like|appears)\s+(?:you're|you are)\s+(.+?)(?:\.|,|$)/gi, category: 'user_intent' as const },
+      {
+        regex:
+          /(?:I think|believe|seems like)\s+(?:you want|you need|the goal is)\s+(.+?)(?:\.|,|$)/gi,
+        category: 'user_intent' as const,
+      },
+      {
+        regex:
+          /(?:it looks like|appears)\s+(?:you're|you are)\s+(.+?)(?:\.|,|$)/gi,
+        category: 'user_intent' as const,
+      },
     ];
 
     for (const { regex, category } of patterns) {
@@ -75,27 +104,47 @@ export class AssumptionTracker {
   /**
    * Assess risk level of an assumption
    */
-  private assessRisk(text: string, category: Assumption['category']): Assumption['risk'] {
+  private assessRisk(
+    text: string,
+    category: Assumption['category'],
+  ): Assumption['risk'] {
     const textLower = text.toLowerCase();
 
     // High risk indicators
     const highRiskKeywords = [
-      'database', 'security', 'authentication', 'password', 'token',
-      'payment', 'production', 'deployment', 'migration', 'delete',
-      'remove', 'breaking', 'api', 'endpoint'
+      'database',
+      'security',
+      'authentication',
+      'password',
+      'token',
+      'payment',
+      'production',
+      'deployment',
+      'migration',
+      'delete',
+      'remove',
+      'breaking',
+      'api',
+      'endpoint',
     ];
 
     // Low risk indicators
     const lowRiskKeywords = [
-      'style', 'format', 'naming', 'convention', 'prefer',
-      'comment', 'documentation', 'test'
+      'style',
+      'format',
+      'naming',
+      'convention',
+      'prefer',
+      'comment',
+      'documentation',
+      'test',
     ];
 
-    if (highRiskKeywords.some(k => textLower.includes(k))) {
+    if (highRiskKeywords.some((k) => textLower.includes(k))) {
       return 'high';
     }
 
-    if (lowRiskKeywords.some(k => textLower.includes(k))) {
+    if (lowRiskKeywords.some((k) => textLower.includes(k))) {
       return 'low';
     }
 
@@ -110,11 +159,7 @@ export class AssumptionTracker {
   /**
    * Mark assumption as verified
    */
-  verify(
-    id: string,
-    method: string,
-    result: string
-  ): void {
+  verify(id: string, method: string, result: string): void {
     const assumption = this.assumptions.get(id);
     if (assumption) {
       assumption.verified = true;
@@ -127,10 +172,7 @@ export class AssumptionTracker {
   /**
    * Verify assumption against codebase
    */
-  verifyAgainstCodebase(
-    id: string,
-    codebaseContent: string
-  ): boolean {
+  verifyAgainstCodebase(id: string, codebaseContent: string): boolean {
     const assumption = this.assumptions.get(id);
     if (!assumption) return false;
 
@@ -140,21 +182,22 @@ export class AssumptionTracker {
     // Extract key terms from assumption
     const keyTerms = textLower
       .split(/\s+/)
-      .filter(w => w.length > 3)
-      .filter(w => !['that', 'with', 'this', 'will', 'have'].includes(w));
+      .filter((w) => w.length > 3)
+      .filter((w) => !['that', 'with', 'this', 'will', 'have'].includes(w));
 
     // Check if key terms exist in codebase
-    const matchingTerms = keyTerms.filter(t => codeLower.includes(t));
-    const matchRatio = keyTerms.length > 0 ? matchingTerms.length / keyTerms.length : 0;
+    const matchingTerms = keyTerms.filter((t) => codeLower.includes(t));
+    const matchRatio =
+      keyTerms.length > 0 ? matchingTerms.length / keyTerms.length : 0;
 
     const verified = matchRatio >= 0.5;
-    
+
     this.verify(
       id,
       'codebase_search',
-      verified 
+      verified
         ? `Found ${matchingTerms.length}/${keyTerms.length} key terms in codebase`
-        : `Only ${matchingTerms.length}/${keyTerms.length} key terms found`
+        : `Only ${matchingTerms.length}/${keyTerms.length} key terms found`,
     );
 
     return verified;
@@ -165,11 +208,11 @@ export class AssumptionTracker {
    */
   getLog(): AssumptionLog {
     const all = Array.from(this.assumptions.values());
-    
+
     return {
       assumptions: all,
-      unverifiedCount: all.filter(a => !a.verified).length,
-      highRiskCount: all.filter(a => a.risk === 'high').length
+      unverifiedCount: all.filter((a) => !a.verified).length,
+      highRiskCount: all.filter((a) => a.risk === 'high').length,
     };
   }
 
@@ -177,22 +220,25 @@ export class AssumptionTracker {
    * Get unverified assumptions
    */
   getUnverified(): Assumption[] {
-    return Array.from(this.assumptions.values()).filter(a => !a.verified);
+    return Array.from(this.assumptions.values()).filter((a) => !a.verified);
   }
 
   /**
    * Get high risk assumptions
    */
   getHighRisk(): Assumption[] {
-    return Array.from(this.assumptions.values()).filter(a => a.risk === 'high');
+    return Array.from(this.assumptions.values()).filter(
+      (a) => a.risk === 'high',
+    );
   }
 
   /**
    * Get unverified high risk assumptions
    */
   getUnverifiedHighRisk(): Assumption[] {
-    return Array.from(this.assumptions.values())
-      .filter(a => !a.verified && a.risk === 'high');
+    return Array.from(this.assumptions.values()).filter(
+      (a) => !a.verified && a.risk === 'high',
+    );
   }
 
   /**
@@ -200,13 +246,13 @@ export class AssumptionTracker {
    */
   getSummaryForUser(): string {
     const log = this.getLog();
-    
+
     if (log.assumptions.length === 0) {
       return 'No assumptions made.';
     }
 
     const lines: string[] = [`I made ${log.assumptions.length} assumption(s):`];
-    
+
     // Group by category
     const byCategory = new Map<string, Assumption[]>();
     for (const a of log.assumptions) {
@@ -217,15 +263,19 @@ export class AssumptionTracker {
     }
 
     for (const [category, assumptions] of byCategory) {
-      lines.push(`\n**${this.formatCategory(category)}:**`);
+      lines.push(
+        `\n**${this.formatCategory(category as Assumption['category'])}:**`,
+      );
       for (const a of assumptions) {
-        const status = a.verified ? '✓' : (a.risk === 'high' ? '⚠️' : '?');
+        const status = a.verified ? '✓' : a.risk === 'high' ? '⚠️' : '?';
         lines.push(`${status} ${a.assumption}`);
       }
     }
 
     if (log.unverifiedCount > 0) {
-      lines.push(`\n⚠️ ${log.unverifiedCount} unverified assumption(s) - please confirm these are correct.`);
+      lines.push(
+        `\n⚠️ ${log.unverifiedCount} unverified assumption(s) - please confirm these are correct.`,
+      );
     }
 
     return lines.join('\n');
@@ -239,7 +289,7 @@ export class AssumptionTracker {
       technical: 'Technical',
       requirement: 'Requirements',
       environment: 'Environment',
-      user_intent: 'Your Intent'
+      user_intent: 'Your Intent',
     };
     return formats[category];
   }

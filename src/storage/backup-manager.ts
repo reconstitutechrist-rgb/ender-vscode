@@ -7,13 +7,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { 
-  readFile, 
-  writeFile, 
-  fileExists, 
-  createSnapshot, 
+import {
+  readFile,
+  writeFile,
+  fileExists,
   hashContent,
-  getWorkspacePath
 } from '../utils/file-utils';
 import { logger, generateId } from '../utils';
 import type { FileSnapshot, RollbackCheckpoint } from '../types';
@@ -38,7 +36,7 @@ export class BackupManager {
       useGitStash: true,
       maxBackups: 50,
       compressBackups: false,
-      ...config
+      ...config,
     };
   }
 
@@ -55,7 +53,10 @@ export class BackupManager {
     if (this.config.useGitStash) {
       const hasGit = await this.isGitRepo();
       if (!hasGit) {
-        logger.warn('Git not available, falling back to file backups', 'Backup');
+        logger.warn(
+          'Git not available, falling back to file backups',
+          'Backup',
+        );
         this.config.useGitStash = false;
       }
     }
@@ -84,54 +85,76 @@ export class BackupManager {
       planId?: string;
       phaseId?: string;
       description?: string;
-    }
+    },
   ): Promise<RollbackCheckpoint> {
     const id = generateId();
     const timestamp = new Date();
 
-    logger.info(`Creating checkpoint ${id} for ${files.length} files`, 'Backup');
+    logger.info(
+      `Creating checkpoint ${id} for ${files.length} files`,
+      'Backup',
+    );
 
     // Try git stash first
     if (this.config.useGitStash) {
       try {
-        const stashResult = await this.createGitStash(files, options?.description);
+        const stashResult = await this.createGitStash(
+          files,
+          options?.description,
+        );
         if (stashResult) {
           const checkpoint: RollbackCheckpoint = {
             id,
             timestamp,
             type: 'git_stash',
-            files: await Promise.all(files.map(f => this.createFileEntry(f))),
-            planId: options?.planId,
-            phaseId: options?.phaseId
+            files: await Promise.all(files.map((f) => this.createFileEntry(f))),
           };
+          if (options?.planId) {
+            checkpoint.planId = options.planId;
+          }
+          if (options?.phaseId) {
+            checkpoint.phaseId = options.phaseId;
+          }
 
           // Save checkpoint metadata
           await this.saveCheckpointMetadata(checkpoint);
-          
+
           return checkpoint;
         }
       } catch (error) {
-        logger.warn('Git stash failed, falling back to file backup', 'Backup', { error });
+        logger.warn('Git stash failed, falling back to file backup', 'Backup', {
+          error,
+        });
       }
     }
 
     // Fall back to file backup
-    const fileBackups = await Promise.all(
-      files.map(f => this.backupFile(f))
-    );
+    const fileBackups = await Promise.all(files.map((f) => this.backupFile(f)));
 
     const checkpoint: RollbackCheckpoint = {
       id,
       timestamp,
       type: 'file_backup',
-      files: fileBackups.filter((f): f is FileSnapshot & { path: string; originalContent: string; hash: string } => f !== null) as Array<{
+      files: fileBackups.filter(
+        (
+          f,
+        ): f is FileSnapshot & {
+          path: string;
+          originalContent: string;
+          hash: string;
+        } => f !== null,
+      ) as Array<{
         path: string;
         originalContent: string;
         hash: string;
       }>,
-      planId: options?.planId,
-      phaseId: options?.phaseId
     };
+    if (options?.planId) {
+      checkpoint.planId = options.planId;
+    }
+    if (options?.phaseId) {
+      checkpoint.phaseId = options.phaseId;
+    }
 
     // Save checkpoint metadata
     await this.saveCheckpointMetadata(checkpoint);
@@ -145,11 +168,16 @@ export class BackupManager {
   /**
    * Create git stash
    */
-  private async createGitStash(files: string[], message?: string): Promise<boolean> {
+  private async createGitStash(
+    files: string[],
+    message?: string,
+  ): Promise<boolean> {
     try {
       // Stage specified files
-      const relativeFiles = files.map(f => path.relative(this.workspacePath, f));
-      
+      const relativeFiles = files.map((f) =>
+        path.relative(this.workspacePath, f),
+      );
+
       for (const file of relativeFiles) {
         try {
           await execAsync(`git add "${file}"`, { cwd: this.workspacePath });
@@ -159,9 +187,12 @@ export class BackupManager {
       }
 
       // Create stash with message
-      const stashMessage = message || `Ender checkpoint ${new Date().toISOString()}`;
-      await execAsync(`git stash push -m "${stashMessage}"`, { cwd: this.workspacePath });
-      
+      const stashMessage =
+        message || `Ender checkpoint ${new Date().toISOString()}`;
+      await execAsync(`git stash push -m "${stashMessage}"`, {
+        cwd: this.workspacePath,
+      });
+
       return true;
     } catch (error) {
       logger.debug('Git stash creation failed', 'Backup', { error });
@@ -177,8 +208,8 @@ export class BackupManager {
     originalContent: string;
     hash: string;
   }> {
-    const absolutePath = path.isAbsolute(filePath) 
-      ? filePath 
+    const absolutePath = path.isAbsolute(filePath)
+      ? filePath
       : path.join(this.workspacePath, filePath);
 
     try {
@@ -186,13 +217,13 @@ export class BackupManager {
       return {
         path: filePath,
         originalContent: content,
-        hash: hashContent(content)
+        hash: hashContent(content),
       };
     } catch {
       return {
         path: filePath,
         originalContent: '',
-        hash: hashContent('')
+        hash: hashContent(''),
       };
     }
   }
@@ -212,7 +243,7 @@ export class BackupManager {
           path: filePath,
           content: '',
           hash: hashContent(''),
-          exists: false
+          exists: false,
         };
       }
 
@@ -222,16 +253,16 @@ export class BackupManager {
       // Save backup file
       const backupPath = path.join(
         this.config.backupDir,
-        `${hash.slice(0, 8)}_${path.basename(filePath)}`
+        `${hash.slice(0, 8)}_${path.basename(filePath)}`,
       );
-      
+
       await writeFile(backupPath, content);
 
       return {
         path: filePath,
         content,
         hash,
-        exists: true
+        exists: true,
       };
     } catch (error) {
       logger.error(`Failed to backup file: ${filePath}`, 'Backup', { error });
@@ -256,10 +287,10 @@ export class BackupManager {
       try {
         // Pop the stash
         await execAsync('git stash pop', { cwd: this.workspacePath });
-        restoredFiles.push(...checkpoint.files.map(f => f.path));
+        restoredFiles.push(...checkpoint.files.map((f) => f.path));
       } catch (error) {
         errors.push(`Git stash pop failed: ${error}`);
-        
+
         // Fall back to file restoration
         for (const file of checkpoint.files) {
           try {
@@ -285,14 +316,17 @@ export class BackupManager {
     return {
       success: errors.length === 0,
       restoredFiles,
-      errors
+      errors,
     };
   }
 
   /**
    * Restore single file
    */
-  private async restoreFile(file: { path: string; originalContent: string }): Promise<void> {
+  private async restoreFile(file: {
+    path: string;
+    originalContent: string;
+  }): Promise<void> {
     const absolutePath = path.isAbsolute(file.path)
       ? file.path
       : path.join(this.workspacePath, file.path);
@@ -310,10 +344,12 @@ export class BackupManager {
   /**
    * Save checkpoint metadata
    */
-  private async saveCheckpointMetadata(checkpoint: RollbackCheckpoint): Promise<void> {
+  private async saveCheckpointMetadata(
+    checkpoint: RollbackCheckpoint,
+  ): Promise<void> {
     const metadataPath = path.join(
       this.config.backupDir,
-      `checkpoint_${checkpoint.id}.json`
+      `checkpoint_${checkpoint.id}.json`,
     );
 
     // Don't save full file contents in metadata (they're in separate backup files)
@@ -321,12 +357,12 @@ export class BackupManager {
       id: checkpoint.id,
       timestamp: checkpoint.timestamp.toISOString(),
       type: checkpoint.type,
-      files: checkpoint.files.map(f => ({
+      files: checkpoint.files.map((f) => ({
         path: f.path,
-        hash: f.hash
+        hash: f.hash,
       })),
       planId: checkpoint.planId,
-      phaseId: checkpoint.phaseId
+      phaseId: checkpoint.phaseId,
     };
 
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
@@ -335,13 +371,15 @@ export class BackupManager {
   /**
    * List available checkpoints
    */
-  async listCheckpoints(): Promise<Array<{
-    id: string;
-    timestamp: Date;
-    type: string;
-    fileCount: number;
-    planId?: string;
-  }>> {
+  async listCheckpoints(): Promise<
+    Array<{
+      id: string;
+      timestamp: Date;
+      type: string;
+      fileCount: number;
+      planId?: string;
+    }>
+  > {
     const checkpoints: Array<{
       id: string;
       timestamp: Date;
@@ -351,18 +389,20 @@ export class BackupManager {
     }> = [];
 
     const files = fs.readdirSync(this.config.backupDir);
-    
+
     for (const file of files) {
       if (file.startsWith('checkpoint_') && file.endsWith('.json')) {
         try {
-          const content = await readFile(path.join(this.config.backupDir, file));
+          const content = await readFile(
+            path.join(this.config.backupDir, file),
+          );
           const metadata = JSON.parse(content);
           checkpoints.push({
             id: metadata.id,
             timestamp: new Date(metadata.timestamp),
             type: metadata.type,
             fileCount: metadata.files?.length || 0,
-            planId: metadata.planId
+            planId: metadata.planId,
           });
         } catch {
           // Invalid checkpoint file, skip
@@ -382,7 +422,7 @@ export class BackupManager {
   async getCheckpoint(id: string): Promise<RollbackCheckpoint | null> {
     const metadataPath = path.join(
       this.config.backupDir,
-      `checkpoint_${id}.json`
+      `checkpoint_${id}.json`,
     );
 
     try {
@@ -391,25 +431,27 @@ export class BackupManager {
 
       // Reconstruct full checkpoint with file contents
       const files = await Promise.all(
-        (metadata.files as Array<{ path: string; hash: string }>).map(async (f) => {
-          const backupPath = path.join(
-            this.config.backupDir,
-            `${f.hash.slice(0, 8)}_${path.basename(f.path)}`
-          );
+        (metadata.files as Array<{ path: string; hash: string }>).map(
+          async (f) => {
+            const backupPath = path.join(
+              this.config.backupDir,
+              `${f.hash.slice(0, 8)}_${path.basename(f.path)}`,
+            );
 
-          let originalContent = '';
-          try {
-            originalContent = await readFile(backupPath);
-          } catch {
-            // Backup file not found, might be git stash
-          }
+            let originalContent = '';
+            try {
+              originalContent = await readFile(backupPath);
+            } catch {
+              // Backup file not found, might be git stash
+            }
 
-          return {
-            path: f.path,
-            originalContent,
-            hash: f.hash
-          };
-        })
+            return {
+              path: f.path,
+              originalContent,
+              hash: f.hash,
+            };
+          },
+        ),
       );
 
       return {
@@ -418,7 +460,7 @@ export class BackupManager {
         type: metadata.type,
         files,
         planId: metadata.planId,
-        phaseId: metadata.phaseId
+        phaseId: metadata.phaseId,
       };
     } catch {
       return null;
@@ -437,7 +479,7 @@ export class BackupManager {
       for (const file of checkpoint.files) {
         const backupPath = path.join(
           this.config.backupDir,
-          `${file.hash.slice(0, 8)}_${path.basename(file.path)}`
+          `${file.hash.slice(0, 8)}_${path.basename(file.path)}`,
         );
         try {
           fs.unlinkSync(backupPath);
@@ -449,7 +491,7 @@ export class BackupManager {
       // Delete metadata
       const metadataPath = path.join(
         this.config.backupDir,
-        `checkpoint_${id}.json`
+        `checkpoint_${id}.json`,
       );
       fs.unlinkSync(metadataPath);
 
@@ -464,12 +506,12 @@ export class BackupManager {
    */
   private async cleanupOldBackups(): Promise<void> {
     const checkpoints = await this.listCheckpoints();
-    
+
     if (checkpoints.length <= this.config.maxBackups) return;
 
     // Delete oldest checkpoints
     const toDelete = checkpoints.slice(this.config.maxBackups);
-    
+
     for (const checkpoint of toDelete) {
       await this.deleteCheckpoint(checkpoint.id);
     }
@@ -482,7 +524,7 @@ export class BackupManager {
    */
   getStorageSize(): number {
     let totalSize = 0;
-    
+
     const files = fs.readdirSync(this.config.backupDir);
     for (const file of files) {
       const filePath = path.join(this.config.backupDir, file);

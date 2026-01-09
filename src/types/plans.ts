@@ -3,9 +3,20 @@
  * Structured multi-phase implementation specifications
  */
 
-export type PlanStatus = 'draft' | 'approved' | 'in_progress' | 'completed' | 'cancelled' | 'paused';
+export type PlanStatus =
+  | 'draft'
+  | 'approved'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'paused';
 
-export type PhaseStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
+export type PhaseStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'failed'
+  | 'skipped';
 
 export interface Plan {
   id: string;
@@ -83,7 +94,11 @@ export interface PlanApprovalRequest {
 }
 
 export interface ApprovalConfirmation {
-  type: 'file_modification' | 'new_dependency' | 'breaking_change' | 'security_impact';
+  type:
+    | 'file_modification'
+    | 'new_dependency'
+    | 'breaking_change'
+    | 'security_impact';
   description: string;
   acknowledged: boolean;
 }
@@ -124,7 +139,15 @@ export interface PlanTemplate {
   id: string;
   name: string;
   description: string;
-  phases: Omit<PlanPhase, 'id' | 'planId' | 'status' | 'actualTokensUsed' | 'startedAt' | 'completedAt'>[];
+  phases: Omit<
+    PlanPhase,
+    | 'id'
+    | 'planId'
+    | 'status'
+    | 'actualTokensUsed'
+    | 'startedAt'
+    | 'completedAt'
+  >[];
   applicableTo: string[];
   complexity: 'low' | 'medium' | 'high';
 }

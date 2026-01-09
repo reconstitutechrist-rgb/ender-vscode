@@ -5,13 +5,13 @@
 
 import { logger } from '../utils';
 import { memoryManager } from './memory-manager';
-import type { MemoryEntry } from '../types';
+// MemoryEntry type available for full implementation
 
 export class AutoMemoryManager {
   /**
    * Handle file save event
    */
-  async onFileSave(filePath: string, content: string): Promise<void> {
+  async onFileSave(filePath: string, _content: string): Promise<void> {
     // Identify if this is a significant architectural file
     if (this.isArchitecturalFile(filePath)) {
       logger.info(`Architectural file saved: ${filePath}`, 'AutoMemory');
@@ -34,7 +34,7 @@ export class AutoMemoryManager {
       status: 'confirmed', // Auto-confirmed? Or pending? Architecture says pending usually.
       pinned: false,
       tier: 'warm',
-      confidence: 100
+      confidence: 100,
     });
   }
 

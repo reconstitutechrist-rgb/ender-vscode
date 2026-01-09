@@ -41,16 +41,16 @@ const DEFAULT_CONFIG: RuntimeVerificationConfig = {
     timeout: 30000, // 30 seconds
     memoryLimit: 512, // MB
     networkAccess: false,
-    fileSystemAccess: 'temp_only'
+    fileSystemAccess: 'temp_only',
   },
   testsOnly: {
     runExisting: true,
     runGenerated: false,
-    coverageThreshold: 70
+    coverageThreshold: 70,
   },
   full: {
-    confirmBefore: true
-  }
+    confirmBefore: true,
+  },
 };
 
 export class RuntimeVerifier {
@@ -94,7 +94,7 @@ export class RuntimeVerifier {
         passed: true,
         mode: this.config.mode,
         duration: 0,
-        output: 'Runtime verification disabled'
+        output: 'Runtime verification disabled',
       };
     }
 
@@ -112,7 +112,7 @@ export class RuntimeVerifier {
           passed: false,
           mode: this.config.mode,
           duration: Date.now() - startTime,
-          errors: ['Unknown verification mode']
+          errors: ['Unknown verification mode'],
         };
     }
   }
@@ -125,10 +125,10 @@ export class RuntimeVerifier {
     workspacePath: string;
   }): Promise<VerificationResult> {
     const startTime = Date.now();
-    
+
     logger.info('Running sandbox verification', 'Runtime', {
       files: options.files.length,
-      config: this.config.sandbox
+      config: this.config.sandbox,
     });
 
     try {
@@ -137,32 +137,34 @@ export class RuntimeVerifier {
       // 2. Copy files to sandbox
       // 3. Run with resource limits
       // 4. Capture output and errors
-      
+
       // For now, we do basic syntax/type checking
       const terminal = vscode.window.createTerminal({
         name: 'Ender Sandbox',
-        hideFromUser: true
+        hideFromUser: true,
       });
 
       // Run TypeScript compiler in check mode
-      terminal.sendText(`cd "${options.workspacePath}" && npx tsc --noEmit 2>&1`);
-      
+      terminal.sendText(
+        `cd "${options.workspacePath}" && npx tsc --noEmit 2>&1`,
+      );
+
       // Wait briefly for execution
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise((resolve) => setTimeout(resolve, 5000));
       terminal.dispose();
 
       return {
         passed: true, // Would check actual output in real implementation
         mode: 'sandbox',
         duration: Date.now() - startTime,
-        output: 'Sandbox verification completed'
+        output: 'Sandbox verification completed',
       };
     } catch (error) {
       return {
         passed: false,
         mode: 'sandbox',
         duration: Date.now() - startTime,
-        errors: [error instanceof Error ? error.message : String(error)]
+        errors: [error instanceof Error ? error.message : String(error)],
       };
     }
   }
@@ -180,39 +182,47 @@ export class RuntimeVerifier {
 
     logger.info('Running test verification', 'Runtime', {
       runExisting: testConfig.runExisting,
-      runGenerated: testConfig.runGenerated
+      runGenerated: testConfig.runGenerated,
     });
 
     try {
       // Detect test framework
       const testCommand = await this.detectTestCommand(options.workspacePath);
-      
+
       if (!testCommand) {
         return {
           passed: true,
           mode: 'tests_only',
           duration: Date.now() - startTime,
-          output: 'No test framework detected'
+          output: 'No test framework detected',
         };
       }
 
       // Run tests
-      const result = await this.executeCommand(testCommand, options.workspacePath);
+      const result = await this.executeCommand(
+        testCommand,
+        options.workspacePath,
+      );
 
-      return {
+      const verificationResult: VerificationResult = {
         passed: result.exitCode === 0,
         mode: 'tests_only',
         duration: Date.now() - startTime,
         output: result.output,
-        errors: result.exitCode !== 0 ? [result.output] : undefined,
-        coverage: result.coverage
       };
+      if (result.exitCode !== 0) {
+        verificationResult.errors = [result.output];
+      }
+      if (result.coverage) {
+        verificationResult.coverage = result.coverage;
+      }
+      return verificationResult;
     } catch (error) {
       return {
         passed: false,
         mode: 'tests_only',
         duration: Date.now() - startTime,
-        errors: [error instanceof Error ? error.message : String(error)]
+        errors: [error instanceof Error ? error.message : String(error)],
       };
     }
   }
@@ -230,7 +240,8 @@ export class RuntimeVerifier {
     if (this.config.full.confirmBefore) {
       const confirm = await vscode.window.showWarningMessage(
         'Run code in full development environment?',
-        'Yes', 'No'
+        'Yes',
+        'No',
       );
 
       if (confirm !== 'Yes') {
@@ -238,7 +249,7 @@ export class RuntimeVerifier {
           passed: false,
           mode: 'full',
           duration: Date.now() - startTime,
-          output: 'User cancelled full verification'
+          output: 'User cancelled full verification',
         };
       }
     }
@@ -247,23 +258,31 @@ export class RuntimeVerifier {
 
     try {
       // Run development server or application
-      const result = await this.executeCommand('npm run dev', options.workspacePath, {
-        timeout: 30000
-      });
+      const result = await this.executeCommand(
+        'npm run dev',
+        options.workspacePath,
+        {
+          timeout: 30000,
+        },
+      );
 
-      return {
+      const fullResult: VerificationResult = {
         passed: result.exitCode === 0,
         mode: 'full',
         duration: Date.now() - startTime,
         output: result.output,
-        errors: result.exitCode !== 0 ? [result.output] : undefined
       };
+      if (result.exitCode !== 0) {
+        fullResult.errors = [result.output];
+      }
+      return fullResult;
     } catch (error) {
       return {
         passed: false,
         mode: 'full',
         duration: Date.now() - startTime,
-        errors: [error instanceof Error ? error.message : String(error)]
+        output: error instanceof Error ? error.message : String(error),
+        errors: [error instanceof Error ? error.message : String(error)],
       };
     }
   }
@@ -271,11 +290,13 @@ export class RuntimeVerifier {
   /**
    * Detect test command based on project
    */
-  private async detectTestCommand(workspacePath: string): Promise<string | null> {
+  private async detectTestCommand(
+    workspacePath: string,
+  ): Promise<string | null> {
     try {
       const packageJsonUri = vscode.Uri.joinPath(
         vscode.Uri.file(workspacePath),
-        'package.json'
+        'package.json',
       );
       const content = await vscode.workspace.fs.readFile(packageJsonUri);
       const packageJson = JSON.parse(Buffer.from(content).toString());
@@ -285,8 +306,11 @@ export class RuntimeVerifier {
       }
 
       // Check for common test frameworks
-      const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-      
+      const deps = {
+        ...packageJson.dependencies,
+        ...packageJson.devDependencies,
+      };
+
       if (deps.jest) return 'npx jest';
       if (deps.mocha) return 'npx mocha';
       if (deps.vitest) return 'npx vitest run';
@@ -303,20 +327,28 @@ export class RuntimeVerifier {
   private async executeCommand(
     command: string,
     cwd: string,
-    options?: { timeout?: number }
-  ): Promise<{ exitCode: number; output: string; coverage?: { lines: number; functions: number; branches: number } }> {
+    options?: { timeout?: number },
+  ): Promise<{
+    exitCode: number;
+    output: string;
+    coverage?: { lines: number; functions: number; branches: number };
+  }> {
     return new Promise((resolve) => {
       const { exec } = require('child_process');
-      
-      const process = exec(command, {
-        cwd,
-        timeout: options?.timeout ?? 60000
-      }, (error: Error | null, stdout: string, stderr: string) => {
-        resolve({
-          exitCode: error ? 1 : 0,
-          output: stdout + stderr
-        });
-      });
+
+      exec(
+        command,
+        {
+          cwd,
+          timeout: options?.timeout ?? 60000,
+        },
+        (error: Error | null, stdout: string, stderr: string) => {
+          resolve({
+            exitCode: error ? 1 : 0,
+            output: stdout + stderr,
+          });
+        },
+      );
     });
   }
 }

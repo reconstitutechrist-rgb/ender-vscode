@@ -49,7 +49,7 @@ export class RequestQueue {
   private stats = {
     completed: 0,
     failed: 0,
-    totalProcessingTime: 0
+    totalProcessingTime: 0,
   };
   private processing = false;
 
@@ -62,9 +62,9 @@ export class RequestQueue {
       priorityBoost: {
         high: 3,
         normal: 1,
-        low: 0.5
+        low: 0.5,
       },
-      ...config
+      ...config,
     };
   }
 
@@ -77,7 +77,7 @@ export class RequestQueue {
     options?: {
       priority?: 'high' | 'normal' | 'low';
       metadata?: Record<string, unknown>;
-    }
+    },
   ): Promise<T> {
     if (this.queue.length >= this.config.maxQueueSize) {
       throw new Error('Request queue is full. Please try again later.');
@@ -92,8 +92,10 @@ export class RequestQueue {
         resolve: resolve as (value: unknown) => void,
         reject,
         createdAt: new Date(),
-        metadata: options?.metadata
       };
+      if (options?.metadata) {
+        request.metadata = options.metadata;
+      }
 
       this.queue.push(request);
       this.sortQueue();
@@ -101,7 +103,7 @@ export class RequestQueue {
       logger.debug(`Request queued: ${request.id}`, 'Queue', {
         agent,
         priority: request.priority,
-        queueLength: this.queue.length
+        queueLength: this.queue.length,
       });
 
       // Start processing if not already
@@ -156,14 +158,14 @@ export class RequestQueue {
 
     logger.debug(`Processing request: ${request.id}`, 'Queue', {
       agent: request.agent,
-      waitTime: request.startedAt.getTime() - request.createdAt.getTime()
+      waitTime: request.startedAt.getTime() - request.createdAt.getTime(),
     });
 
     try {
       // Add timeout
       const result = await Promise.race([
         request.execute(),
-        this.timeout(request.id)
+        this.timeout(request.id),
       ]);
 
       const processingTime = Date.now() - request.startedAt.getTime();
@@ -171,7 +173,7 @@ export class RequestQueue {
       this.stats.totalProcessingTime += processingTime;
 
       logger.debug(`Request completed: ${request.id}`, 'Queue', {
-        processingTime
+        processingTime,
       });
 
       request.resolve(result);
@@ -182,7 +184,7 @@ export class RequestQueue {
       if (this.isRateLimitError(error)) {
         const retryAfter = this.extractRetryAfter(error);
         this.handleRateLimit(retryAfter);
-        
+
         // Re-queue the request
         this.queue.unshift(request);
         this.inProgress.delete(request.id);
@@ -202,7 +204,11 @@ export class RequestQueue {
   private timeout(requestId: string): Promise<never> {
     return new Promise((_, reject) => {
       setTimeout(() => {
-        reject(new Error(`Request ${requestId} timed out after ${this.config.requestTimeout}ms`));
+        reject(
+          new Error(
+            `Request ${requestId} timed out after ${this.config.requestTimeout}ms`,
+          ),
+        );
       }, this.config.requestTimeout);
     });
   }
@@ -214,12 +220,12 @@ export class RequestQueue {
     this.queue.sort((a, b) => {
       const aPriority = this.config.priorityBoost[a.priority];
       const bPriority = this.config.priorityBoost[b.priority];
-      
+
       // Higher priority first
       if (aPriority !== bPriority) {
         return bPriority - aPriority;
       }
-      
+
       // Then by creation time (FIFO)
       return a.createdAt.getTime() - b.createdAt.getTime();
     });
@@ -231,7 +237,7 @@ export class RequestQueue {
   handleRateLimit(retryAfter: number): void {
     this.rateLimited = true;
     this.rateLimitUntil = new Date(Date.now() + retryAfter);
-    
+
     logger.warn(`Rate limited for ${retryAfter}ms`, 'Queue');
   }
 
@@ -240,9 +246,11 @@ export class RequestQueue {
    */
   private isRateLimitError(error: unknown): boolean {
     if (error instanceof Error) {
-      return error.message.includes('rate') || 
-             error.message.includes('429') ||
-             error.name === 'RateLimitError';
+      return (
+        error.message.includes('rate') ||
+        error.message.includes('429') ||
+        error.name === 'RateLimitError'
+      );
     }
     return false;
   }
@@ -259,7 +267,7 @@ export class RequestQueue {
         return parseInt(retryAfter, 10) * 1000;
       }
     }
-    
+
     // Default retry delay
     return this.config.rateLimitDelay;
   }
@@ -268,11 +276,13 @@ export class RequestQueue {
    * Get queue status
    */
   getStatus(): QueueStatus {
-    const avgProcessingTime = this.stats.completed > 0
-      ? this.stats.totalProcessingTime / this.stats.completed
-      : 0;
+    const avgProcessingTime =
+      this.stats.completed > 0
+        ? this.stats.totalProcessingTime / this.stats.completed
+        : 0;
 
-    const estimatedWait = this.queue.length * avgProcessingTime / this.config.maxConcurrent;
+    const estimatedWait =
+      (this.queue.length * avgProcessingTime) / this.config.maxConcurrent;
 
     return {
       pending: this.queue.length,
@@ -281,7 +291,7 @@ export class RequestQueue {
       failed: this.stats.failed,
       rateLimited: this.rateLimited,
       estimatedWait,
-      avgProcessingTime
+      avgProcessingTime,
     };
   }
 
@@ -289,7 +299,7 @@ export class RequestQueue {
    * Cancel pending request
    */
   cancel(requestId: string): boolean {
-    const index = this.queue.findIndex(r => r.id === requestId);
+    const index = this.queue.findIndex((r) => r.id === requestId);
     if (index === -1) return false;
 
     const [request] = this.queue.splice(index, 1);
@@ -302,11 +312,11 @@ export class RequestQueue {
    */
   cancelAll(): number {
     const count = this.queue.length;
-    
+
     for (const request of this.queue) {
       request.reject(new Error('Request cancelled'));
     }
-    
+
     this.queue = [];
     return count;
   }
@@ -315,7 +325,7 @@ export class RequestQueue {
    * Get requests for agent
    */
   getRequestsForAgent(agent: AgentType): QueuedRequest[] {
-    return this.queue.filter(r => r.agent === agent);
+    return this.queue.filter((r) => r.agent === agent);
   }
 
   /**
@@ -341,7 +351,7 @@ export class RequestQueue {
     this.stats = {
       completed: 0,
       failed: 0,
-      totalProcessingTime: 0
+      totalProcessingTime: 0,
     };
   }
 }

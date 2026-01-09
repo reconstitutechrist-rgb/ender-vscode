@@ -26,7 +26,7 @@ export class DependencyGraph {
       this.nodes.set(path, {
         path,
         imports,
-        importedBy: []
+        importedBy: [],
       });
     }
 
@@ -37,7 +37,7 @@ export class DependencyGraph {
         // In a real implementation, this would handle relative paths, extensions, aliases
         const resolvedPath = this.resolveImport(importPath, path);
         const importedNode = this.nodes.get(resolvedPath);
-        
+
         if (importedNode) {
           importedNode.importedBy.push(path);
         }
@@ -62,11 +62,11 @@ export class DependencyGraph {
   /**
    * Resolve import to file path (stub)
    */
-  private resolveImport(importPath: string, fromPath: string): string {
+  private resolveImport(importPath: string, _fromPath: string): string {
     // Simplified resolution logic
     // Assumes relative imports match file structure
     // This is a placeholder for full module resolution
-    return importPath; 
+    return importPath;
   }
 }
 

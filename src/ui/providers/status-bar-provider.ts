@@ -4,7 +4,7 @@
  */
 
 import * as vscode from 'vscode';
-import type { AgentType, CostTracking } from '../types';
+import type { AgentType, CostTracking } from '../../types';
 
 export class StatusBarProvider {
   private statusItem: vscode.StatusBarItem;
@@ -15,7 +15,7 @@ export class StatusBarProvider {
     // Main status item
     this.statusItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
-      100
+      100,
     );
     this.statusItem.name = 'Ender Status';
     this.statusItem.command = 'ender.openChat';
@@ -24,7 +24,7 @@ export class StatusBarProvider {
     // Cost tracking item
     this.costItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
-      99
+      99,
     );
     this.costItem.name = 'Ender Cost';
     this.costItem.tooltip = 'API cost tracking';
@@ -32,7 +32,7 @@ export class StatusBarProvider {
     // Context usage item
     this.contextItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
-      98
+      98,
     );
     this.contextItem.name = 'Ender Context';
     this.contextItem.tooltip = 'Context token usage';
@@ -46,11 +46,11 @@ export class StatusBarProvider {
    */
   show(options: { showCost?: boolean; showContext?: boolean } = {}): void {
     this.statusItem.show();
-    
+
     if (options.showCost) {
       this.costItem.show();
     }
-    
+
     if (options.showContext) {
       this.contextItem.show();
     }
@@ -79,7 +79,7 @@ export class StatusBarProvider {
   setWorking(agent: AgentType): void {
     this.statusItem.text = `$(sync~spin) Ender: ${this.formatAgentName(agent)}`;
     this.statusItem.backgroundColor = new vscode.ThemeColor(
-      'statusBarItem.warningBackground'
+      'statusBarItem.warningBackground',
     );
   }
 
@@ -89,7 +89,7 @@ export class StatusBarProvider {
   setWaitingApproval(): void {
     this.statusItem.text = '$(bell) Ender: Awaiting Approval';
     this.statusItem.backgroundColor = new vscode.ThemeColor(
-      'statusBarItem.prominentBackground'
+      'statusBarItem.prominentBackground',
     );
   }
 
@@ -99,7 +99,7 @@ export class StatusBarProvider {
   setError(message?: string): void {
     this.statusItem.text = `$(error) Ender: ${message || 'Error'}`;
     this.statusItem.backgroundColor = new vscode.ThemeColor(
-      'statusBarItem.errorBackground'
+      'statusBarItem.errorBackground',
     );
   }
 
@@ -120,26 +120,26 @@ export class StatusBarProvider {
   updateCost(tracking: CostTracking): void {
     const todayFormatted = this.formatCost(tracking.today);
     this.costItem.text = `$(credit-card) ${todayFormatted}`;
-    
+
     let tooltip = `Today: ${todayFormatted}\n`;
     tooltip += `This month: ${this.formatCost(tracking.thisMonth)}\n`;
     tooltip += `All time: ${this.formatCost(tracking.allTime)}`;
-    
+
     if (tracking.budget) {
       tooltip += `\n\nDaily budget: ${this.formatCost(tracking.budget.daily)}`;
       tooltip += `\nRemaining: ${this.formatCost(tracking.budget.dailyRemaining)}`;
-      
+
       // Show warning if approaching limit
       const usagePercent = tracking.today / tracking.budget.daily;
       if (usagePercent >= tracking.budget.warningThreshold) {
         this.costItem.backgroundColor = new vscode.ThemeColor(
-          'statusBarItem.warningBackground'
+          'statusBarItem.warningBackground',
         );
       } else {
         this.costItem.backgroundColor = undefined;
       }
     }
-    
+
     this.costItem.tooltip = tooltip;
   }
 
@@ -150,14 +150,14 @@ export class StatusBarProvider {
     const percent = Math.round((used / max) * 100);
     this.contextItem.text = `$(symbol-namespace) ${percent}%`;
     this.contextItem.tooltip = `Context: ${this.formatTokens(used)} / ${this.formatTokens(max)} tokens`;
-    
+
     if (percent >= 90) {
       this.contextItem.backgroundColor = new vscode.ThemeColor(
-        'statusBarItem.errorBackground'
+        'statusBarItem.errorBackground',
       );
     } else if (percent >= 75) {
       this.contextItem.backgroundColor = new vscode.ThemeColor(
-        'statusBarItem.warningBackground'
+        'statusBarItem.warningBackground',
       );
     } else {
       this.contextItem.backgroundColor = undefined;
@@ -169,20 +169,20 @@ export class StatusBarProvider {
    */
   private formatAgentName(agent: AgentType): string {
     const names: Record<AgentType, string> = {
-      'conductor': 'Orchestrating',
-      'planner': 'Planning',
-      'coder': 'Coding',
-      'reviewer': 'Reviewing',
-      'documenter': 'Documenting',
-      'researcher': 'Researching',
-      'tester': 'Testing',
-      'debugger': 'Debugging',
+      conductor: 'Orchestrating',
+      planner: 'Planning',
+      coder: 'Coding',
+      reviewer: 'Reviewing',
+      documenter: 'Documenting',
+      researcher: 'Researching',
+      tester: 'Testing',
+      debugger: 'Debugging',
       'git-manager': 'Git',
       'memory-keeper': 'Memory',
       'hooks-agent': 'Hooks',
       'integrations-agent': 'Integrations',
       'infrastructure-agent': 'Infrastructure',
-      'sanity-checker': 'Sanity Check'
+      'sanity-checker': 'Sanity Check',
     };
     return names[agent] || agent;
   }
@@ -221,7 +221,10 @@ export class StatusBarProvider {
   /**
    * Set status with a unified status type
    */
-  setStatus(status: 'idle' | 'working' | 'waiting' | 'error' | 'success', message?: string): void {
+  setStatus(
+    status: 'idle' | 'working' | 'waiting' | 'error' | 'success',
+    message?: string,
+  ): void {
     switch (status) {
       case 'idle':
         this.setIdle();

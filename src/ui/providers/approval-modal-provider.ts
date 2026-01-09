@@ -5,7 +5,19 @@
 
 import * as vscode from 'vscode';
 import { logger } from '../../utils';
-import type { Plan, PlanPhase, FileChange, PlanApprovalRequest } from '../../types';
+import type { PlanPhase, FileChange, PlanApprovalRequest } from '../../types';
+
+// Helper function for HTML escaping
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  };
+  return text.replace(/[&<>"']/g, (m) => map[m] || m);
+}
 
 export interface ApprovalResult {
   approved: boolean;
@@ -17,17 +29,19 @@ export class ApprovalModalProvider {
   /**
    * Show plan approval modal
    */
-  static async showPlanApproval(request: PlanApprovalRequest): Promise<ApprovalResult> {
+  static async showPlanApproval(
+    request: PlanApprovalRequest,
+  ): Promise<ApprovalResult> {
     logger.info('Showing plan approval modal', 'Approval', {
       planId: request.plan.id,
-      confidence: request.confidence
+      confidence: request.confidence,
     });
 
     const panel = vscode.window.createWebviewPanel(
       'enderApproval',
       `Approve Plan: ${request.plan.title}`,
       vscode.ViewColumn.One,
-      { enableScripts: true }
+      { enableScripts: true },
     );
 
     return new Promise((resolve) => {
@@ -61,16 +75,21 @@ export class ApprovalModalProvider {
    */
   static async showPhaseApproval(
     phase: PlanPhase,
-    files: FileChange[]
+    files: FileChange[],
   ): Promise<ApprovalResult> {
-    const detail = files.map(f => 
-      `${f.operation === 'create' ? '➕' : f.operation === 'delete' ? '❌' : '✏️'} ${f.path}`
-    ).join('\n');
+    const detail = files
+      .map(
+        (f) =>
+          `${f.operation === 'create' ? '➕' : f.operation === 'delete' ? '❌' : '✏️'} ${f.path}`,
+      )
+      .join('\n');
 
     const result = await vscode.window.showInformationMessage(
       `Phase ${phase.index + 1}: ${phase.title}`,
       { modal: true, detail },
-      'Approve', 'Reject', 'View Details'
+      'Approve',
+      'Reject',
+      'View Details',
     );
 
     if (result === 'View Details') {
@@ -79,23 +98,32 @@ export class ApprovalModalProvider {
       return ApprovalModalProvider.showPhaseApproval(phase, files);
     }
 
-    return {
+    const approvalResult: ApprovalResult = {
       approved: result === 'Approve',
-      reason: result === 'Reject' ? 'User rejected phase' : undefined
     };
+    if (result === 'Reject') {
+      approvalResult.reason = 'User rejected phase';
+    }
+    return approvalResult;
   }
 
   /**
    * Show file-level approval
    */
   static async showFileApproval(file: FileChange): Promise<ApprovalResult> {
-    const action = file.operation === 'create' ? 'Create' :
-                   file.operation === 'delete' ? 'Delete' : 'Modify';
+    const action =
+      file.operation === 'create'
+        ? 'Create'
+        : file.operation === 'delete'
+          ? 'Delete'
+          : 'Modify';
 
     const result = await vscode.window.showInformationMessage(
       `${action}: ${file.path}`,
       { modal: true, detail: file.explanation ?? 'No explanation provided' },
-      'Approve', 'Reject', 'View Diff'
+      'Approve',
+      'Reject',
+      'View Diff',
     );
 
     if (result === 'View Diff' && file.diff) {
@@ -103,29 +131,37 @@ export class ApprovalModalProvider {
       return ApprovalModalProvider.showFileApproval(file);
     }
 
-    return {
+    const fileApprovalResult: ApprovalResult = {
       approved: result === 'Approve',
-      reason: result === 'Reject' ? 'User rejected file change' : undefined
     };
+    if (result === 'Reject') {
+      fileApprovalResult.reason = 'User rejected file change';
+    }
+    return fileApprovalResult;
   }
 
   /**
    * Show file changes summary
    */
   private static async showFileChanges(files: FileChange[]): Promise<void> {
-    const items: vscode.QuickPickItem[] = files.map(f => ({
-      label: `${f.operation === 'create' ? '$(add)' : f.operation === 'delete' ? '$(trash)' : '$(edit)'} ${f.path}`,
-      description: f.operation,
-      detail: f.explanation
-    }));
+    const items: vscode.QuickPickItem[] = files.map((f) => {
+      const item: vscode.QuickPickItem = {
+        label: `${f.operation === 'create' ? '$(add)' : f.operation === 'delete' ? '$(trash)' : '$(edit)'} ${f.path}`,
+        description: f.operation,
+      };
+      if (f.explanation) {
+        item.detail = f.explanation;
+      }
+      return item;
+    });
 
     const selected = await vscode.window.showQuickPick(items, {
       title: 'File Changes',
-      placeHolder: 'Select a file to view diff'
+      placeHolder: 'Select a file to view diff',
     });
 
     if (selected) {
-      const file = files.find(f => selected.label.includes(f.path));
+      const file = files.find((f) => selected.label.includes(f.path));
       if (file?.diff) {
         await ApprovalModalProvider.showDiff(file);
       }
@@ -144,7 +180,7 @@ export class ApprovalModalProvider {
       'vscode.diff',
       originalUri,
       modifiedUri,
-      `${file.path} (Changes)`
+      `${file.path} (Changes)`,
     );
   }
 
@@ -154,14 +190,15 @@ export class ApprovalModalProvider {
   static async showDestructiveConfirmation(
     operation: string,
     items: string[],
-    typedConfirmation?: string
+    typedConfirmation?: string,
   ): Promise<boolean> {
     const detail = `This will affect:\n${items.slice(0, 10).join('\n')}${items.length > 10 ? `\n... and ${items.length - 10} more` : ''}`;
 
     const result = await vscode.window.showWarningMessage(
       `⚠️ ${operation}`,
       { modal: true, detail },
-      'Proceed', 'Cancel'
+      'Proceed',
+      'Cancel',
     );
 
     if (result !== 'Proceed') {
@@ -172,7 +209,7 @@ export class ApprovalModalProvider {
     if (typedConfirmation) {
       const input = await vscode.window.showInputBox({
         prompt: `Type "${typedConfirmation}" to confirm`,
-        placeHolder: typedConfirmation
+        placeHolder: typedConfirmation,
       });
 
       return input === typedConfirmation;
@@ -275,22 +312,30 @@ export class ApprovalModalProvider {
     <div class="explanation">${escapeHtml(explanation)}</div>
   </div>
 
-  ${warnings.length > 0 ? `
+  ${
+    warnings.length > 0
+      ? `
   <div class="warnings">
     <div class="section-title">⚠️ Warnings</div>
-    ${warnings.map(w => `<div class="warning-item">• ${escapeHtml(w)}</div>`).join('')}
+    ${warnings.map((w) => `<div class="warning-item">• ${escapeHtml(w)}</div>`).join('')}
   </div>
-  ` : ''}
+  `
+      : ''
+  }
 
   <div class="section">
     <div class="section-title">Phases (${plan.phases.length})</div>
     <ul class="phase-list">
-      ${plan.phases.map((phase, i) => `
+      ${plan.phases
+        .map(
+          (phase, i) => `
         <li class="phase-item">
           <div class="phase-title">${i + 1}. ${escapeHtml(phase.title)}</div>
           <div class="phase-files">${phase.affectedFiles.join(', ')}</div>
         </li>
-      `).join('')}
+      `,
+        )
+        .join('')}
     </ul>
   </div>
 

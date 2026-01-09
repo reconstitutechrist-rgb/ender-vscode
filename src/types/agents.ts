@@ -19,9 +19,7 @@ export type AgentType =
   | 'infrastructure-agent'
   | 'sanity-checker';
 
-export type ModelId = 
-  | 'claude-opus-4-5-20251101'
-  | 'claude-sonnet-4-5-20250929';
+export type ModelId = 'claude-opus-4-5-20251101' | 'claude-sonnet-4-5-20250929';
 
 export interface AgentConfig {
   type: AgentType;
@@ -197,17 +195,7 @@ export interface HallucinationIssue {
   suggestion?: string;
 }
 
-export interface InstructionComplianceReport {
-  totalInstructions: number;
-  complied: number;
-  violated: number;
-  partial: number;
-  details: Array<{
-    instruction: string;
-    status: 'complied' | 'violated' | 'partial' | 'not_applicable';
-    evidence?: string;
-  }>;
-}
+// InstructionComplianceReport is now exported from sanity.ts
 
 export interface RequestAlignmentReport {
   originalRequest: string;
@@ -237,4 +225,8 @@ import type { MemoryEntry } from './memory';
 import type { Plan } from './plans';
 import type { ProjectSettings } from './config';
 import type { ValidationResult } from './validators';
-import type { Assumption, TrackedInstruction } from './sanity';
+import type {
+  Assumption,
+  TrackedInstruction,
+  InstructionComplianceReport,
+} from './sanity';

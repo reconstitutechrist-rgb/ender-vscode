@@ -7,15 +7,14 @@ import { generateId, logger } from '../utils';
 import type {
   Plan,
   PlanPhase,
-  PlanTask,
-  PlanStatus,
   PhaseStatus,
   PlanLock,
   PlanApprovalRequest,
   PlanExecutionResult,
   PlanError,
-  TaskType
+  TaskType,
 } from '../types';
+import { plannerAgent } from '../agents/planner';
 
 export interface CreatePlanParams {
   title: string;
@@ -55,18 +54,33 @@ export class PlanManager {
       title: p.title,
       description: p.description,
       status: 'pending' as PhaseStatus,
-      tasks: p.tasks.map(t => ({
-        id: generateId(),
-        phaseId: '',
-        description: t.description,
-        type: t.type,
-        status: 'pending' as const,
-        targetFile: t.targetFile,
-        expectedChanges: t.expectedChanges
-      })),
+      tasks: p.tasks.map((t) => {
+        const task: {
+          id: string;
+          phaseId: string;
+          description: string;
+          type: TaskType;
+          status: 'pending';
+          targetFile?: string;
+          expectedChanges?: string;
+        } = {
+          id: generateId(),
+          phaseId: '',
+          description: t.description,
+          type: t.type,
+          status: 'pending',
+        };
+        if (t.targetFile) {
+          task.targetFile = t.targetFile;
+        }
+        if (t.expectedChanges) {
+          task.expectedChanges = t.expectedChanges;
+        }
+        return task;
+      }),
       affectedFiles: p.affectedFiles,
       estimatedTokens: this.estimatePhaseTokens(p),
-      actualTokensUsed: 0
+      actualTokensUsed: 0,
     }));
 
     // Update phase IDs in tasks
@@ -76,7 +90,9 @@ export class PlanManager {
       }
     }
 
-    const allAffectedFiles = [...new Set(phases.flatMap(p => p.affectedFiles))];
+    const allAffectedFiles = [
+      ...new Set(phases.flatMap((p) => p.affectedFiles)),
+    ];
 
     const plan: Plan = {
       id: planId,
@@ -94,12 +110,14 @@ export class PlanManager {
         originalRequest: params.originalRequest,
         assumptions: params.assumptions ?? [],
         risks: params.risks ?? [],
-        dependencies: []
-      }
+        dependencies: [],
+      },
     };
 
     this.plans.set(planId, plan);
-    logger.info(`Plan created: ${planId}`, 'PlanManager', { title: params.title });
+    logger.info(`Plan created: ${planId}`, 'PlanManager', {
+      title: params.title,
+    });
 
     return plan;
   }
@@ -126,25 +144,32 @@ export class PlanManager {
     if (!plan) return null;
 
     const warnings: string[] = [];
-    const requiredConfirmations: PlanApprovalRequest['requiredConfirmations'] = [];
+    const requiredConfirmations: PlanApprovalRequest['requiredConfirmations'] =
+      [];
 
     // Check for breaking changes
-    if (plan.phases.some(p => p.affectedFiles.some(f => f.includes('index') || f.includes('main')))) {
+    if (
+      plan.phases.some((p) =>
+        p.affectedFiles.some((f) => f.includes('index') || f.includes('main')),
+      )
+    ) {
       warnings.push('This plan modifies entry point files');
       requiredConfirmations.push({
         type: 'file_modification',
         description: 'Entry point files will be modified',
-        acknowledged: false
+        acknowledged: false,
       });
     }
 
     // Check for security-related changes
-    if (plan.affectedFiles.some(f => /auth|security|token|password/i.test(f))) {
+    if (
+      plan.affectedFiles.some((f) => /auth|security|token|password/i.test(f))
+    ) {
       warnings.push('This plan modifies security-related files');
       requiredConfirmations.push({
         type: 'security_impact',
         description: 'Security-related files will be modified',
-        acknowledged: false
+        acknowledged: false,
       });
     }
 
@@ -152,14 +177,15 @@ export class PlanManager {
     let confidence = 95;
     if (plan.estimatedComplexity === 'high') confidence -= 15;
     if (plan.estimatedComplexity === 'medium') confidence -= 5;
-    if (plan.metadata.risks.length > 0) confidence -= plan.metadata.risks.length * 3;
+    if (plan.metadata.risks.length > 0)
+      confidence -= plan.metadata.risks.length * 3;
 
     return {
       plan,
       confidence: Math.max(50, confidence),
       explanation: this.generatePlanExplanation(plan),
       warnings,
-      requiredConfirmations
+      requiredConfirmations,
     };
   }
 
@@ -169,6 +195,15 @@ export class PlanManager {
   approvePlan(planId: string): boolean {
     const plan = this.plans.get(planId);
     if (!plan || plan.status !== 'draft') return false;
+
+    // Validate plan before approval
+    const validation = plannerAgent.validatePlan(plan);
+    if (!validation.valid) {
+      logger.error('Plan validation failed', 'PlanManager', {
+        issues: validation.issues,
+      });
+      return false;
+    }
 
     plan.status = 'approved';
     plan.approvedAt = new Date();
@@ -181,7 +216,7 @@ export class PlanManager {
       lockedBy: 'user',
       allowedFiles: plan.affectedFiles,
       allowedFunctions: new Map(),
-      checksum: this.calculatePlanChecksum(plan)
+      checksum: this.calculatePlanChecksum(plan),
     };
 
     logger.info(`Plan approved: ${planId}`, 'PlanManager');
@@ -196,7 +231,7 @@ export class PlanManager {
     if (!plan || plan.status !== 'approved') return false;
 
     plan.status = 'in_progress';
-    
+
     // Start first phase
     const firstPhase = plan.phases[0];
     if (firstPhase) {
@@ -218,13 +253,7 @@ export class PlanManager {
     const currentPhase = plan.phases[plan.currentPhaseIndex];
     if (!currentPhase) return null;
 
-    // Complete current phase
-    currentPhase.status = 'completed';
-    currentPhase.completedAt = new Date();
-    currentPhase.actualTokensUsed = tokensUsed;
-    plan.actualTokensUsed += tokensUsed;
-
-    // Mark all tasks as completed
+    // Mark all tasks as completed before advancing
     for (const task of currentPhase.tasks) {
       task.status = 'completed';
       task.completedAt = new Date();
@@ -232,22 +261,21 @@ export class PlanManager {
 
     logger.info(`Phase completed: ${currentPhase.title}`, 'PlanManager');
 
-    // Move to next phase
-    plan.currentPhaseIndex++;
+    // Use planner's advancePlan to handle phase advancement
+    const updatedPlan = plannerAgent.advancePlan(plan, tokensUsed);
+    this.plans.set(planId, updatedPlan);
+    this.activePlan = updatedPlan;
 
-    if (plan.currentPhaseIndex >= plan.phases.length) {
-      // Plan completed
-      plan.status = 'completed';
-      plan.completedAt = new Date();
+    // Check if plan is completed
+    if (updatedPlan.status === 'completed') {
       this.activePlan = null;
       this.planLock = null;
-      
       logger.info(`Plan completed: ${planId}`, 'PlanManager');
       return null;
     }
 
     // Start next phase
-    const nextPhase = plan.phases[plan.currentPhaseIndex];
+    const nextPhase = updatedPlan.phases[updatedPlan.currentPhaseIndex];
     if (nextPhase) {
       nextPhase.status = 'in_progress';
       nextPhase.startedAt = new Date();
@@ -271,7 +299,9 @@ export class PlanManager {
     }
 
     plan.status = 'paused';
-    logger.error(`Phase failed: ${currentPhase?.title}`, 'PlanManager', { error });
+    logger.error(`Phase failed: ${currentPhase?.title}`, 'PlanManager', {
+      error,
+    });
   }
 
   /**
@@ -282,7 +312,7 @@ export class PlanManager {
     if (!plan) return false;
 
     plan.status = 'cancelled';
-    
+
     if (this.activePlan?.id === planId) {
       this.activePlan = null;
       this.planLock = null;
@@ -324,14 +354,14 @@ export class PlanManager {
     if (!plan) return null;
 
     const errors: PlanError[] = [];
-    
+
     for (let i = 0; i < plan.phases.length; i++) {
       const phase = plan.phases[i];
       if (phase?.status === 'failed' && phase.error) {
         errors.push({
           phaseIndex: i,
           error: phase.error,
-          recoverable: true
+          recoverable: true,
         });
       }
     }
@@ -339,15 +369,16 @@ export class PlanManager {
     return {
       planId,
       success: plan.status === 'completed',
-      phasesCompleted: plan.phases.filter(p => p.status === 'completed').length,
+      phasesCompleted: plan.phases.filter((p) => p.status === 'completed')
+        .length,
       totalPhases: plan.phases.length,
       filesModified: plan.affectedFiles,
       tokensUsed: plan.actualTokensUsed,
-      duration: plan.completedAt 
+      duration: plan.completedAt
         ? plan.completedAt.getTime() - (plan.approvedAt?.getTime() ?? 0)
         : 0,
       errors,
-      rollbackAvailable: true
+      rollbackAvailable: true,
     };
   }
 
@@ -356,11 +387,11 @@ export class PlanManager {
    */
   private generatePlanExplanation(plan: Plan): string {
     const lines: string[] = [];
-    
+
     lines.push(`I'm going to ${plan.description.toLowerCase()}.`);
     lines.push('');
-    lines.push('Here\'s what I\'ll do:');
-    
+    lines.push("Here's what I'll do:");
+
     for (let i = 0; i < plan.phases.length; i++) {
       const phase = plan.phases[i];
       if (!phase) continue;
@@ -369,7 +400,7 @@ export class PlanManager {
 
     if (plan.metadata.assumptions.length > 0) {
       lines.push('');
-      lines.push('I\'m assuming:');
+      lines.push("I'm assuming:");
       for (const assumption of plan.metadata.assumptions) {
         lines.push(`• ${assumption}`);
       }
@@ -389,12 +420,19 @@ export class PlanManager {
   /**
    * Estimate phase tokens
    */
-  private estimatePhaseTokens(phase: { tasks: Array<unknown>; affectedFiles: string[] }): number {
+  private estimatePhaseTokens(phase: {
+    tasks: Array<unknown>;
+    affectedFiles: string[];
+  }): number {
     const baseTokens = 2000;
     const perTask = 500;
     const perFile = 1000;
-    
-    return baseTokens + (phase.tasks.length * perTask) + (phase.affectedFiles.length * perFile);
+
+    return (
+      baseTokens +
+      phase.tasks.length * perTask +
+      phase.affectedFiles.length * perFile
+    );
   }
 
   /**
@@ -402,7 +440,7 @@ export class PlanManager {
    */
   private estimateComplexity(phases: PlanPhase[]): 'low' | 'medium' | 'high' {
     const totalTasks = phases.reduce((sum, p) => sum + p.tasks.length, 0);
-    const totalFiles = new Set(phases.flatMap(p => p.affectedFiles)).size;
+    const totalFiles = new Set(phases.flatMap((p) => p.affectedFiles)).size;
 
     if (totalTasks > 10 || totalFiles > 5 || phases.length > 4) return 'high';
     if (totalTasks > 5 || totalFiles > 3 || phases.length > 2) return 'medium';
@@ -415,18 +453,18 @@ export class PlanManager {
   private calculatePlanChecksum(plan: Plan): string {
     const content = JSON.stringify({
       id: plan.id,
-      phases: plan.phases.map(p => ({
+      phases: plan.phases.map((p) => ({
         title: p.title,
-        tasks: p.tasks.map(t => t.description)
+        tasks: p.tasks.map((t) => t.description),
       })),
-      affectedFiles: plan.affectedFiles
+      affectedFiles: plan.affectedFiles,
     });
-    
+
     // Simple hash
     let hash = 0;
     for (let i = 0; i < content.length; i++) {
       const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
     return hash.toString(16);

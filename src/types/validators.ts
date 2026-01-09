@@ -48,7 +48,13 @@ export type ValidatorStage =
   | 'specialist'
   | 'ai-accuracy';
 
-export type ValidatorMode = 'strict' | 'fast' | 'custom' | 'integration-focus' | 'infrastructure-focus' | 'ai-accuracy-focus';
+export type ValidatorMode =
+  | 'strict'
+  | 'fast'
+  | 'custom'
+  | 'integration-focus'
+  | 'infrastructure-focus'
+  | 'ai-accuracy-focus';
 
 export type ValidatorSeverity = 'error' | 'warning' | 'info';
 
@@ -106,7 +112,10 @@ export interface HallucinationDetectorResult extends ValidationResult {
     file: string;
     lineRange: [number, number];
     code: string;
-    reason: 'no_plan_reference' | 'exceeds_plan_scope' | 'unspecified_functionality';
+    reason:
+      | 'no_plan_reference'
+      | 'exceeds_plan_scope'
+      | 'unspecified_functionality';
   }>;
 }
 
@@ -141,11 +150,16 @@ export interface BestPracticesResult extends ValidationResult {
 }
 
 export interface SecurityScannerResult extends ValidationResult {
-  issues: Array<{
+  securityIssues: Array<{
     file: string;
     line: number;
     severity: 'critical' | 'high' | 'medium' | 'low';
-    type: 'hardcoded_secret' | 'sql_injection' | 'xss' | 'path_traversal' | 'other';
+    type:
+      | 'hardcoded_secret'
+      | 'sql_injection'
+      | 'xss'
+      | 'path_traversal'
+      | 'other';
     description: string;
     recommendation: string;
   }>;
@@ -163,7 +177,7 @@ export interface TypeIntegrityResult extends ValidationResult {
 }
 
 export interface ImportExportResult extends ValidationResult {
-  issues: Array<{
+  importExportIssues: Array<{
     file: string;
     type: 'broken_import' | 'missing_export' | 'circular_dependency';
     details: string;
@@ -226,7 +240,12 @@ export interface HookRulesResult extends ValidationResult {
     file: string;
     line: number;
     hookName: string;
-    rule: 'conditional_hook' | 'loop_hook' | 'wrong_order' | 'missing_deps' | 'invalid_name';
+    rule:
+      | 'conditional_hook'
+      | 'loop_hook'
+      | 'wrong_order'
+      | 'missing_deps'
+      | 'invalid_name';
     framework: 'react' | 'vue' | 'svelte' | 'angular';
     message: string;
     suggestion: string;
@@ -237,7 +256,12 @@ export interface EventLeakResult extends ValidationResult {
   leaks: Array<{
     file: string;
     line: number;
-    eventType: 'dom_listener' | 'emitter_listener' | 'subscription' | 'interval' | 'timeout';
+    eventType:
+      | 'dom_listener'
+      | 'emitter_listener'
+      | 'subscription'
+      | 'interval'
+      | 'timeout';
     registrationCode: string;
     missingCleanup: string;
     severity: 'high' | 'medium';
@@ -250,7 +274,12 @@ export interface ApiContractResult extends ValidationResult {
     line: number;
     apiName: string;
     endpoint: string;
-    issue: 'wrong_method' | 'missing_param' | 'wrong_type' | 'deprecated_endpoint' | 'missing_auth';
+    issue:
+      | 'wrong_method'
+      | 'missing_param'
+      | 'wrong_type'
+      | 'deprecated_endpoint'
+      | 'missing_auth';
     expected: string;
     actual: string;
     documentation?: string;
@@ -258,11 +287,16 @@ export interface ApiContractResult extends ValidationResult {
 }
 
 export interface AuthFlowResult extends ValidationResult {
-  issues: Array<{
+  authIssues: Array<{
     file: string;
     line: number;
     flowType: 'oauth' | 'jwt' | 'session' | 'api_key' | 'sso';
-    issue: 'missing_refresh' | 'insecure_storage' | 'missing_validation' | 'exposed_token' | 'missing_logout';
+    issue:
+      | 'missing_refresh'
+      | 'insecure_storage'
+      | 'missing_validation'
+      | 'exposed_token'
+      | 'missing_logout';
     severity: 'critical' | 'high' | 'medium';
     description: string;
     recommendation: string;
@@ -270,9 +304,13 @@ export interface AuthFlowResult extends ValidationResult {
 }
 
 export interface EnvironmentConsistencyResult extends ValidationResult {
-  issues: Array<{
+  envIssues: Array<{
     variable: string;
-    issue: 'missing_in_env' | 'missing_in_code' | 'type_mismatch' | 'no_default';
+    issue:
+      | 'missing_in_env'
+      | 'missing_in_code'
+      | 'type_mismatch'
+      | 'no_default';
     environments: string[];
     usedInFiles: string[];
     suggestion: string;
@@ -284,7 +322,12 @@ export interface SecretsExposureResult extends ValidationResult {
     file: string;
     line: number;
     type: 'hardcoded' | 'logged' | 'committed' | 'exposed_in_error';
-    secretType: 'api_key' | 'password' | 'token' | 'private_key' | 'connection_string';
+    secretType:
+      | 'api_key'
+      | 'password'
+      | 'token'
+      | 'private_key'
+      | 'connection_string';
     severity: 'critical';
     pattern: string;
     recommendation: string;
@@ -292,10 +335,15 @@ export interface SecretsExposureResult extends ValidationResult {
 }
 
 export interface DockerBestPracticesResult extends ValidationResult {
-  issues: Array<{
+  dockerIssues: Array<{
     file: string;
     line: number;
-    rule: 'no_latest_tag' | 'missing_user' | 'secrets_in_build' | 'large_image' | 'no_healthcheck';
+    rule:
+      | 'no_latest_tag'
+      | 'missing_user'
+      | 'secrets_in_build'
+      | 'large_image'
+      | 'no_healthcheck';
     severity: 'high' | 'medium' | 'low';
     description: string;
     recommendation: string;
@@ -303,12 +351,17 @@ export interface DockerBestPracticesResult extends ValidationResult {
 }
 
 export interface CloudConfigResult extends ValidationResult {
-  issues: Array<{
+  cloudIssues: Array<{
     file: string;
     line: number;
     provider: 'aws' | 'gcp' | 'azure' | 'vercel' | 'netlify';
     resource: string;
-    issue: 'overly_permissive' | 'missing_encryption' | 'public_access' | 'no_logging' | 'invalid_config';
+    issue:
+      | 'overly_permissive'
+      | 'missing_encryption'
+      | 'public_access'
+      | 'no_logging'
+      | 'invalid_config';
     severity: 'critical' | 'high' | 'medium';
     description: string;
     recommendation: string;
@@ -329,12 +382,16 @@ export interface ApiExistenceResult extends ValidationResult {
 }
 
 export interface DependencyVerifierResult extends ValidationResult {
-  issues: Array<{
+  dependencyIssues: Array<{
     file: string;
     line: number;
     importStatement: string;
     package: string;
-    issue: 'not_installed' | 'not_in_package_json' | 'wrong_name' | 'deprecated_package';
+    issue:
+      | 'not_installed'
+      | 'not_in_package_json'
+      | 'wrong_name'
+      | 'deprecated_package';
     suggestion?: string;
   }>;
   missingPeerDeps: string[];
@@ -382,7 +439,7 @@ export interface StyleMatcherResult extends ValidationResult {
 }
 
 export interface ComplexityAnalyzerResult extends ValidationResult {
-  issues: Array<{
+  complexityIssues: Array<{
     file: string;
     line: number;
     type: 'over_engineered' | 'under_engineered';
@@ -404,9 +461,18 @@ export interface EdgeCaseResult extends ValidationResult {
     file: string;
     line: number;
     context: string;
-    edgeCase: 'null_undefined' | 'empty_array' | 'empty_string' | 'zero' |
-              'negative' | 'overflow' | 'network_error' | 'timeout' |
-              'invalid_input' | 'concurrent_access' | 'file_not_found';
+    edgeCase:
+      | 'null_undefined'
+      | 'empty_array'
+      | 'empty_string'
+      | 'zero'
+      | 'negative'
+      | 'overflow'
+      | 'network_error'
+      | 'timeout'
+      | 'invalid_input'
+      | 'concurrent_access'
+      | 'file_not_found';
     risk: 'high' | 'medium' | 'low';
     suggestion: string;
     exampleCode?: string;

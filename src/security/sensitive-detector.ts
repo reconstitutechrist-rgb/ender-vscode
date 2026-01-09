@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import ignore from 'ignore';
-import { logger } from '../utils';
+// Logger available for future use
 
 // Default sensitive file patterns
 const DEFAULT_SENSITIVE_PATTERNS = [
@@ -27,7 +27,7 @@ const DEFAULT_SENSITIVE_PATTERNS = [
   'aws-credentials',
   '.docker/config.json',
   'kubeconfig',
-  '.kube/config'
+  '.kube/config',
 ];
 
 // Patterns that should never be sent to AI
@@ -41,7 +41,7 @@ const NEVER_SEND_PATTERNS = [
   'id_ecdsa',
   'id_ed25519',
   '.npmrc',
-  '.pypirc'
+  '.pypirc',
 ];
 
 export interface SensitiveFileCheck {
@@ -67,7 +67,7 @@ export class SensitiveFileDetector {
   constructor(additionalPatterns?: string[]) {
     this.patterns = [...DEFAULT_SENSITIVE_PATTERNS];
     this.neverSendPatterns = [...NEVER_SEND_PATTERNS];
-    
+
     if (additionalPatterns) {
       this.customPatterns = additionalPatterns;
       this.patterns.push(...additionalPatterns);
@@ -88,7 +88,8 @@ export class SensitiveFileDetector {
         isSensitive: true,
         canSendToAI: false,
         reason: 'File contains private keys or credentials',
-        recommendation: 'This file should never be shared. Reference it by name only.'
+        recommendation:
+          'This file should never be shared. Reference it by name only.',
       };
     }
 
@@ -98,7 +99,8 @@ export class SensitiveFileDetector {
         isSensitive: true,
         canSendToAI: true, // Can send but with warning
         reason: 'File may contain sensitive configuration',
-        recommendation: 'Review file contents before sharing. Mask any secrets.'
+        recommendation:
+          'Review file contents before sharing. Mask any secrets.',
       };
     }
 
@@ -108,13 +110,13 @@ export class SensitiveFileDetector {
         isSensitive: true,
         canSendToAI: true,
         reason: 'Filename suggests sensitive content',
-        recommendation: 'Verify no secrets are exposed before sharing.'
+        recommendation: 'Verify no secrets are exposed before sharing.',
       };
     }
 
     return {
       isSensitive: false,
-      canSendToAI: true
+      canSendToAI: true,
     };
   }
 
@@ -123,13 +125,22 @@ export class SensitiveFileDetector {
    */
   private hasSensitiveNamePattern(fileName: string): boolean {
     const sensitiveKeywords = [
-      'secret', 'credential', 'password', 'token', 'auth',
-      'private', 'apikey', 'api_key', 'api-key', 'access_key',
-      'secret_key', 'private_key'
+      'secret',
+      'credential',
+      'password',
+      'token',
+      'auth',
+      'private',
+      'apikey',
+      'api_key',
+      'api-key',
+      'access_key',
+      'secret_key',
+      'private_key',
     ];
 
     const nameLower = fileName.toLowerCase();
-    return sensitiveKeywords.some(keyword => nameLower.includes(keyword));
+    return sensitiveKeywords.some((keyword) => nameLower.includes(keyword));
   }
 
   /**
@@ -141,33 +152,54 @@ export class SensitiveFileDetector {
 
     const patterns: Array<{ regex: RegExp; type: string }> = [
       // API Keys
-      { regex: /['"]?(sk[-_]live[-_][a-zA-Z0-9]{24,})['"]?/, type: 'Stripe Secret Key' },
-      { regex: /['"]?(pk[-_]live[-_][a-zA-Z0-9]{24,})['"]?/, type: 'Stripe Publishable Key' },
+      {
+        regex: /['"]?(sk[-_]live[-_][a-zA-Z0-9]{24,})['"]?/,
+        type: 'Stripe Secret Key',
+      },
+      {
+        regex: /['"]?(pk[-_]live[-_][a-zA-Z0-9]{24,})['"]?/,
+        type: 'Stripe Publishable Key',
+      },
       { regex: /['"]?(AKIA[A-Z0-9]{16})['"]?/, type: 'AWS Access Key' },
-      { regex: /['"]?(ghp_[a-zA-Z0-9]{36})['"]?/, type: 'GitHub Personal Token' },
+      {
+        regex: /['"]?(ghp_[a-zA-Z0-9]{36})['"]?/,
+        type: 'GitHub Personal Token',
+      },
       { regex: /['"]?(gho_[a-zA-Z0-9]{36})['"]?/, type: 'GitHub OAuth Token' },
       { regex: /['"]?(glpat-[a-zA-Z0-9\-_]{20,})['"]?/, type: 'GitLab Token' },
-      { regex: /['"]?(xox[baprs]-[a-zA-Z0-9\-]{10,})['"]?/, type: 'Slack Token' },
-      
+      {
+        regex: /['"]?(xox[baprs]-[a-zA-Z0-9\-]{10,})['"]?/,
+        type: 'Slack Token',
+      },
+
       // Generic patterns
       { regex: /api[-_]?key\s*[:=]\s*['"]([^'"]{20,})['"]/, type: 'API Key' },
-      { regex: /secret[-_]?key\s*[:=]\s*['"]([^'"]{20,})['"]/, type: 'Secret Key' },
+      {
+        regex: /secret[-_]?key\s*[:=]\s*['"]([^'"]{20,})['"]/,
+        type: 'Secret Key',
+      },
       { regex: /password\s*[:=]\s*['"]([^'"]{8,})['"]/, type: 'Password' },
       { regex: /token\s*[:=]\s*['"]([^'"]{20,})['"]/, type: 'Token' },
-      
+
       // Connection strings
-      { regex: /mongodb(\+srv)?:\/\/[^:]+:[^@]+@/, type: 'MongoDB Connection String' },
-      { regex: /postgres(ql)?:\/\/[^:]+:[^@]+@/, type: 'PostgreSQL Connection String' },
+      {
+        regex: /mongodb(\+srv)?:\/\/[^:]+:[^@]+@/,
+        type: 'MongoDB Connection String',
+      },
+      {
+        regex: /postgres(ql)?:\/\/[^:]+:[^@]+@/,
+        type: 'PostgreSQL Connection String',
+      },
       { regex: /mysql:\/\/[^:]+:[^@]+@/, type: 'MySQL Connection String' },
       { regex: /redis:\/\/[^:]+:[^@]+@/, type: 'Redis Connection String' },
     ];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Skip comments
       if (/^\s*(\/\/|#|\/\*)/.test(line)) continue;
-      
+
       // Skip env references
       if (/process\.env|import\.meta\.env|os\.environ/.test(line)) continue;
 
@@ -180,7 +212,7 @@ export class SensitiveFileDetector {
             line: i + 1,
             type,
             value,
-            masked: this.maskSecret(value)
+            masked: this.maskSecret(value),
           });
         }
       }
@@ -197,7 +229,11 @@ export class SensitiveFileDetector {
       return '*'.repeat(value.length);
     }
     const visibleChars = Math.min(4, Math.floor(value.length / 4));
-    return value.substring(0, visibleChars) + '*'.repeat(value.length - visibleChars * 2) + value.substring(value.length - visibleChars);
+    return (
+      value.substring(0, visibleChars) +
+      '*'.repeat(value.length - visibleChars * 2) +
+      value.substring(value.length - visibleChars)
+    );
   }
 
   /**
@@ -208,7 +244,10 @@ export class SensitiveFileDetector {
     let redacted = content;
 
     for (const secret of secrets) {
-      redacted = redacted.replace(secret.value, `[REDACTED_${secret.type.toUpperCase().replace(/\s+/g, '_')}]`);
+      redacted = redacted.replace(
+        secret.value,
+        `[REDACTED_${secret.type.toUpperCase().replace(/\s+/g, '_')}]`,
+      );
     }
 
     return redacted;

@@ -3,7 +3,7 @@
  * Verifies that the output aligns with the original user request
  */
 
-import type { FileChange, ContextBundle, RequestAlignmentReport } from '../types';
+import type { FileChange, RequestAlignmentReport } from '../types';
 
 export type ApiCallback = (params: {
   model?: string;
@@ -20,14 +20,14 @@ export class RequestAlignmentChecker {
     originalRequest: string,
     changes: FileChange[],
     callApi: ApiCallback,
-    model: string
+    model: string,
   ): Promise<RequestAlignmentReport> {
     const prompt = `## Request Alignment Check
 
 Original Request: "${originalRequest}"
 
 Changes made:
-${changes.map(c => `- Modified ${c.path}`).join('\n')}
+${changes.map((c) => `- Modified ${c.path}`).join('\n')}
 
 Did these changes fulfill the request?
 Identify addressed goals, missed goals, and any extra work.
@@ -45,12 +45,15 @@ Response JSON Format:
     try {
       const response = await callApi({
         model,
-        system: "You are a product owner. Verify the implementation matches the request.",
+        system:
+          'You are a product owner. Verify the implementation matches the request.',
         messages: [{ role: 'user', content: prompt }],
-        maxTokens: 1000
+        maxTokens: 1000,
       });
 
-      const result = JSON.parse(response.content.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+      const result = JSON.parse(
+        response.content.match(/\{[\s\S]*\}/)?.[0] ?? '{}',
+      );
 
       return {
         originalRequest,
@@ -58,7 +61,7 @@ Response JSON Format:
         addressedGoals: result.addressedGoals ?? [],
         missedGoals: result.missedGoals ?? [],
         extraWork: result.extraWork ?? [],
-        driftExplanation: result.driftExplanation
+        driftExplanation: result.driftExplanation,
       };
     } catch (error) {
       return {
@@ -67,7 +70,7 @@ Response JSON Format:
         addressedGoals: ['Functionality implemented'],
         missedGoals: [],
         extraWork: [],
-        driftExplanation: 'Error checking alignment'
+        driftExplanation: 'Error checking alignment',
       };
     }
   }

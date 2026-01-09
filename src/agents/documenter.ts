@@ -4,7 +4,12 @@
  */
 
 import { BaseAgent, AgentExecuteParams } from './base-agent';
-import type { AgentConfig, AgentResult, ContextBundle, FileChange } from '../types';
+import type {
+  AgentConfig,
+  AgentResult,
+  ContextBundle,
+  FileChange,
+} from '../types';
 import { logger, generateId } from '../utils';
 import { apiClient } from '../api';
 
@@ -30,7 +35,7 @@ export class DocumenterAgent extends BaseAgent {
       model: 'claude-sonnet-4-5-20250929',
       systemPrompt: DOCUMENTER_SYSTEM_PROMPT,
       capabilities: ['documentation', 'explanation', 'commenting'],
-      maxTokens: 2048
+      maxTokens: 2048,
     };
     super(config, apiClient);
   }
@@ -46,36 +51,41 @@ export class DocumenterAgent extends BaseAgent {
         system: this.buildSystemPrompt(context),
         messages: this.buildMessages(prompt, context),
         maxTokens: this.maxTokens,
-        metadata: { agent: 'documenter', taskId: generateId() }
+        metadata: { agent: 'documenter', taskId: generateId() },
       });
 
       return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 90,
         tokensUsed: response.usage,
-        startTime
+        startTime,
       });
     } catch (error) {
       logger.error('Documenter failed', 'Documenter', { error });
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
 
-  private buildDocPrompt(task: string, changes: FileChange[], _context: ContextBundle): string {
+  private buildDocPrompt(
+    task: string,
+    changes: FileChange[],
+    _context: ContextBundle,
+  ): string {
     let prompt = `## Task\n${task}\n\n`;
-    
+
     if (changes.length > 0) {
       prompt += '## Changes to Document\n';
-      changes.forEach(c => {
+      changes.forEach((c) => {
         prompt += `\n### ${c.path} (${c.operation})\n`;
         if (c.explanation) prompt += `${c.explanation}\n`;
       });
     }
 
-    prompt += '\n\nProvide a clear, beginner-friendly explanation of these changes.';
+    prompt +=
+      '\n\nProvide a clear, beginner-friendly explanation of these changes.';
     return prompt;
   }
 }

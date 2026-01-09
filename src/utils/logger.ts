@@ -34,22 +34,35 @@ class Logger {
     return levels.indexOf(level) >= levels.indexOf(this.logLevel);
   }
 
-  private formatMessage(level: LogLevel, message: string, context?: string): string {
+  private formatMessage(
+    level: LogLevel,
+    message: string,
+    context?: string,
+  ): string {
     const timestamp = new Date().toISOString();
     const prefix = context ? `[${context}]` : '';
     return `${timestamp} [${level.toUpperCase()}]${prefix} ${message}`;
   }
 
-  private log(level: LogLevel, message: string, context?: string, data?: unknown): void {
+  private log(
+    level: LogLevel,
+    message: string,
+    context?: string,
+    data?: unknown,
+  ): void {
     if (!this.shouldLog(level)) return;
 
     const entry: LogEntry = {
       timestamp: new Date(),
       level,
       message,
-      context,
-      data
     };
+    if (context) {
+      entry.context = context;
+    }
+    if (data !== undefined) {
+      entry.data = data;
+    }
 
     this.logs.push(entry);
     if (this.logs.length > this.maxLogs) {
@@ -57,19 +70,24 @@ class Logger {
     }
 
     const formatted = this.formatMessage(level, message, context);
-    
+
     if (this.outputChannel) {
       this.outputChannel.appendLine(formatted);
       if (data) {
-        this.outputChannel.appendLine(`  Data: ${JSON.stringify(data, null, 2)}`);
+        this.outputChannel.appendLine(
+          `  Data: ${JSON.stringify(data, null, 2)}`,
+        );
       }
     }
 
     // Also log to console in development
     if (process.env.NODE_ENV === 'development') {
-      const consoleFn = level === 'error' ? console.error : 
-                        level === 'warn' ? console.warn : 
-                        console.log;
+      const consoleFn =
+        level === 'error'
+          ? console.error
+          : level === 'warn'
+            ? console.warn
+            : console.log;
       consoleFn(formatted, data || '');
     }
   }
@@ -102,11 +120,15 @@ class Logger {
   }
 
   // API call logging
-  api(method: string, tokens: { input: number; output: number }, duration: number): void {
+  api(
+    method: string,
+    tokens: { input: number; output: number },
+    duration: number,
+  ): void {
     this.debug(`API call completed`, 'API', {
       method,
       tokens,
-      duration: `${duration}ms`
+      duration: `${duration}ms`,
     });
   }
 
@@ -117,7 +139,7 @@ class Logger {
 
   // Get logs by level
   getLogsByLevel(level: LogLevel): LogEntry[] {
-    return this.logs.filter(log => log.level === level);
+    return this.logs.filter((log) => log.level === level);
   }
 
   // Clear logs

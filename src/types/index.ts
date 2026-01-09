@@ -103,19 +103,38 @@ export interface ExtensionState {
 // Event types
 export type EnderEvent =
   | { type: 'agent_started'; agent: import('./agents').AgentType; task: string }
-  | { type: 'agent_completed'; agent: import('./agents').AgentType; result: import('./agents').AgentResult }
+  | {
+      type: 'agent_completed';
+      agent: import('./agents').AgentType;
+      result: import('./agents').AgentResult;
+    }
   | { type: 'agent_error'; agent: import('./agents').AgentType; error: Error }
   | { type: 'plan_created'; plan: import('./plans').Plan }
   | { type: 'plan_approved'; planId: string }
   | { type: 'phase_started'; planId: string; phaseIndex: number }
   | { type: 'phase_completed'; planId: string; phaseIndex: number }
-  | { type: 'validation_started'; validators: import('./validators').ValidatorName[] }
-  | { type: 'validation_completed'; result: import('./validators').ValidationPipelineResult }
+  | {
+      type: 'validation_started';
+      validators: import('./validators').ValidatorName[];
+    }
+  | {
+      type: 'validation_completed';
+      result: import('./validators').ValidationPipelineResult;
+    }
   | { type: 'memory_updated'; entry: import('./memory').MemoryEntry }
-  | { type: 'checkpoint_created'; checkpoint: import('./validators').RollbackCheckpoint }
+  | {
+      type: 'checkpoint_created';
+      checkpoint: import('./validators').RollbackCheckpoint;
+    }
   | { type: 'rollback_triggered'; checkpointId: string }
   | { type: 'cost_updated'; cost: CostTracking }
-  | { type: 'approval_required'; request: import('./plans').PlanApprovalRequest }
-  | { type: 'confirmation_required'; checkpoint: import('./sanity').VerificationCheckpoint };
+  | {
+      type: 'approval_required';
+      request: import('./plans').PlanApprovalRequest;
+    }
+  | {
+      type: 'confirmation_required';
+      checkpoint: import('./sanity').VerificationCheckpoint;
+    };
 
 export type EnderEventHandler = (event: EnderEvent) => void;

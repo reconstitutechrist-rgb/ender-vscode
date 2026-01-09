@@ -33,7 +33,7 @@ export class TelemetryManager {
   async initialize(context: vscode.ExtensionContext): Promise<void> {
     // Check VS Code telemetry setting
     const vscTelemetry = vscode.env.isTelemetryEnabled;
-    
+
     // Check Ender-specific setting
     const config = vscode.workspace.getConfiguration('ender');
     const enderTelemetry = config.get<boolean>('telemetry.enabled', false);
@@ -42,10 +42,14 @@ export class TelemetryManager {
 
     if (this.enabled) {
       // Get or create anonymous ID
-      this.anonymousId = context.globalState.get('ender.telemetry.anonymousId') ?? '';
+      this.anonymousId =
+        context.globalState.get('ender.telemetry.anonymousId') ?? '';
       if (!this.anonymousId) {
         this.anonymousId = this.generateAnonymousId();
-        await context.globalState.update('ender.telemetry.anonymousId', this.anonymousId);
+        await context.globalState.update(
+          'ender.telemetry.anonymousId',
+          this.anonymousId,
+        );
       }
 
       // Start flush interval
@@ -60,7 +64,10 @@ export class TelemetryManager {
   /**
    * Track an event
    */
-  track(event: string, properties?: Record<string, string | number | boolean>): void {
+  track(
+    event: string,
+    properties?: Record<string, string | number | boolean>,
+  ): void {
     if (!this.enabled) return;
 
     this.eventQueue.push({
@@ -68,8 +75,8 @@ export class TelemetryManager {
       properties: {
         ...properties,
         anonymousId: this.anonymousId,
-        timestamp: Date.now()
-      }
+        timestamp: Date.now(),
+      },
     });
 
     // Flush if queue is large
@@ -81,7 +88,11 @@ export class TelemetryManager {
   /**
    * Track a metric
    */
-  trackMetric(name: string, value: number, properties?: Record<string, string>): void {
+  trackMetric(
+    name: string,
+    value: number,
+    properties?: Record<string, string>,
+  ): void {
     if (!this.enabled) return;
 
     this.eventQueue.push({
@@ -89,9 +100,9 @@ export class TelemetryManager {
       properties: {
         ...properties,
         metricName: name,
-        anonymousId: this.anonymousId
+        anonymousId: this.anonymousId,
       },
-      measurements: { [name]: value }
+      measurements: { [name]: value },
     });
   }
 
@@ -101,7 +112,7 @@ export class TelemetryManager {
   trackActivation(): void {
     this.track('extension_activated', {
       vscodeVersion: vscode.version,
-      platform: process.platform
+      platform: process.platform,
     });
   }
 
@@ -111,7 +122,7 @@ export class TelemetryManager {
   trackAgentUsage(agent: string, duration: number, success: boolean): void {
     this.track('agent_used', {
       agent,
-      success
+      success,
     });
     this.trackMetric('agent_duration', duration, { agent });
   }
@@ -122,7 +133,7 @@ export class TelemetryManager {
   trackValidation(mode: string, passed: boolean, duration: number): void {
     this.track('validation_run', {
       mode,
-      passed
+      passed,
     });
     this.trackMetric('validation_duration', duration, { mode });
   }
@@ -133,7 +144,7 @@ export class TelemetryManager {
   trackError(component: string, errorType: string): void {
     this.track('error', {
       component,
-      errorType
+      errorType,
     });
   }
 

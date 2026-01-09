@@ -16,8 +16,9 @@ export class MemoryTierManager {
 
     // Hot: Accessed recently (last 24h) and frequently (> 5 times)
     // Or very recently created (last 1h)
-    const ageCreatedHours = (now.getTime() - entry.timestamp.getTime()) / (1000 * 60 * 60);
-    
+    const ageCreatedHours =
+      (now.getTime() - entry.timestamp.getTime()) / (1000 * 60 * 60);
+
     if (ageCreatedHours < 1) {
       return 'hot';
     }

@@ -8,7 +8,9 @@ import { memoryManager } from '../../memory';
 import type { MemoryEntry, MemoryCategory } from '../../types';
 
 export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<MemoryTreeItem | undefined>();
+  private _onDidChangeTreeData = new vscode.EventEmitter<
+    MemoryTreeItem | undefined
+  >();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private entries: MemoryEntry[] = [];
@@ -56,13 +58,15 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryTreeIte
 
     // Children of a group
     if (element.type === 'category') {
-      const entries = this.entries.filter(e => e.category === element.category);
+      const entries = this.entries.filter(
+        (e) => e.category === element.category,
+      );
       return this.getEntryItems(entries);
     }
 
     if (element.type === 'date') {
-      const entries = this.entries.filter(e => 
-        this.getDateGroup(e.timestamp) === element.label
+      const entries = this.entries.filter(
+        (e) => this.getDateGroup(e.timestamp) === element.label,
       );
       return this.getEntryItems(entries);
     }
@@ -71,7 +75,7 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryTreeIte
   }
 
   private getCategoryGroups(): MemoryTreeItem[] {
-    const categories = new Set(this.entries.map(e => e.category));
+    const categories = new Set(this.entries.map((e) => e.category));
     const categoryLabels: Record<MemoryCategory, string> = {
       architecture: '🏗️ Architecture',
       conventions: '📏 Conventions',
@@ -81,25 +85,33 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryTreeIte
       plans: '📋 Plans',
       history: '📜 History',
       corrections: '✏️ Corrections',
-      structure: '📁 Structure'
+      structure: '📁 Structure',
     };
 
-    return Array.from(categories).map(cat => new MemoryTreeItem(
-      categoryLabels[cat] ?? cat,
-      vscode.TreeItemCollapsibleState.Collapsed,
-      'category',
-      cat
-    ));
+    return Array.from(categories).map(
+      (cat) =>
+        new MemoryTreeItem(
+          categoryLabels[cat] ?? cat,
+          vscode.TreeItemCollapsibleState.Collapsed,
+          'category',
+          cat,
+        ),
+    );
   }
 
   private getDateGroups(): MemoryTreeItem[] {
-    const groups = new Set(this.entries.map(e => this.getDateGroup(e.timestamp)));
-    
-    return Array.from(groups).map(group => new MemoryTreeItem(
-      group,
-      vscode.TreeItemCollapsibleState.Collapsed,
-      'date'
-    ));
+    const groups = new Set(
+      this.entries.map((e) => this.getDateGroup(e.timestamp)),
+    );
+
+    return Array.from(groups).map(
+      (group) =>
+        new MemoryTreeItem(
+          group,
+          vscode.TreeItemCollapsibleState.Collapsed,
+          'date',
+        ),
+    );
   }
 
   private getDateGroup(date: Date): string {
@@ -115,13 +127,13 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryTreeIte
   }
 
   private getEntryItems(entries: MemoryEntry[]): MemoryTreeItem[] {
-    return entries.map(entry => {
+    return entries.map((entry) => {
       const item = new MemoryTreeItem(
         entry.summary,
         vscode.TreeItemCollapsibleState.None,
         'entry',
         entry.category,
-        entry
+        entry,
       );
 
       // Set icon based on status
@@ -141,16 +153,20 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryTreeIte
       item.tooltip.appendMarkdown(`**${entry.summary}**\n\n`);
       item.tooltip.appendMarkdown(`${entry.detail}\n\n`);
       item.tooltip.appendMarkdown(`*Category:* ${entry.category}\n\n`);
-      item.tooltip.appendMarkdown(`*Created:* ${entry.timestamp.toLocaleDateString()}\n\n`);
+      item.tooltip.appendMarkdown(
+        `*Created:* ${entry.timestamp.toLocaleDateString()}\n\n`,
+      );
       if (entry.relatedFiles.length > 0) {
-        item.tooltip.appendMarkdown(`*Files:* ${entry.relatedFiles.join(', ')}`);
+        item.tooltip.appendMarkdown(
+          `*Files:* ${entry.relatedFiles.join(', ')}`,
+        );
       }
 
       // Set command to view/edit
       item.command = {
         command: 'ender.viewMemoryEntry',
         title: 'View Entry',
-        arguments: [entry]
+        arguments: [entry],
       };
 
       // Set context value for context menu
@@ -167,7 +183,7 @@ class MemoryTreeItem extends vscode.TreeItem {
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly type: 'category' | 'date' | 'entry',
     public readonly category?: MemoryCategory,
-    public readonly entry?: MemoryEntry
+    public readonly entry?: MemoryEntry,
   ) {
     super(label, collapsibleState);
   }
@@ -178,7 +194,9 @@ class MemoryTreeItem extends vscode.TreeItem {
  * Shows tracked instructions in sidebar
  */
 export class InstructionTreeProvider implements vscode.TreeDataProvider<InstructionTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<InstructionTreeItem | undefined>();
+  private _onDidChangeTreeData = new vscode.EventEmitter<
+    InstructionTreeItem | undefined
+  >();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private instructions: Array<{
@@ -201,39 +219,43 @@ export class InstructionTreeProvider implements vscode.TreeDataProvider<Instruct
     return element;
   }
 
-  async getChildren(element?: InstructionTreeItem): Promise<InstructionTreeItem[]> {
+  async getChildren(
+    element?: InstructionTreeItem,
+  ): Promise<InstructionTreeItem[]> {
     if (element) return [];
 
-    return this.instructions.map(inst => {
+    return this.instructions.map((inst) => {
       const statusIcons: Record<string, string> = {
         pending: 'circle-outline',
         complied: 'check',
         violated: 'x',
-        partial: 'circle-slash'
+        partial: 'circle-slash',
       };
 
       const statusColors: Record<string, string> = {
         pending: 'list.warningForeground',
         complied: 'testing.iconPassed',
         violated: 'testing.iconFailed',
-        partial: 'list.warningForeground'
+        partial: 'list.warningForeground',
       };
 
       const item = new InstructionTreeItem(
         inst.text,
         vscode.TreeItemCollapsibleState.None,
-        inst.id
+        inst.id,
       );
 
       item.iconPath = new vscode.ThemeIcon(
         statusIcons[inst.status] ?? 'circle-outline',
-        new vscode.ThemeColor(statusColors[inst.status] ?? 'foreground')
+        new vscode.ThemeColor(statusColors[inst.status] ?? 'foreground'),
       );
 
       item.description = inst.status;
 
       if (inst.evidence) {
-        item.tooltip = new vscode.MarkdownString(`**Status:** ${inst.status}\n\n**Evidence:** ${inst.evidence}`);
+        item.tooltip = new vscode.MarkdownString(
+          `**Status:** ${inst.status}\n\n**Evidence:** ${inst.evidence}`,
+        );
       }
 
       return item;
@@ -245,7 +267,7 @@ class InstructionTreeItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-    public readonly instructionId: string
+    public readonly instructionId: string,
   ) {
     super(label, collapsibleState);
   }

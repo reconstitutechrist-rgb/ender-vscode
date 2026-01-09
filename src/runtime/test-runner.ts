@@ -41,12 +41,18 @@ export class TestRunner {
   /**
    * Run tests for specific files
    */
-  async runTests(testFiles: string[], options?: TestRunOptions): Promise<TestResult> {
+  async runTests(
+    testFiles: string[],
+    options?: TestRunOptions,
+  ): Promise<TestResult> {
     const startTime = Date.now();
     const framework = options?.framework ?? this.detectFramework();
     const timeout = options?.timeout ?? 60000;
 
-    logger.info(`Running tests with ${framework} for ${testFiles.length} files`, 'TestRunner');
+    logger.info(
+      `Running tests with ${framework} for ${testFiles.length} files`,
+      'TestRunner',
+    );
 
     if (!this.workspacePath) {
       logger.error('Workspace path not set', 'TestRunner');
@@ -56,21 +62,30 @@ export class TestRunner {
         success: 0,
         failed: 0,
         duration: Date.now() - startTime,
-        failures: [{ test: 'Setup', message: 'Workspace path not configured' }]
+        failures: [{ test: 'Setup', message: 'Workspace path not configured' }],
       };
     }
 
     try {
-      const { command, args } = this.getTestCommand(framework, testFiles, options?.coverage);
+      const { command, args } = this.getTestCommand(
+        framework,
+        testFiles,
+        options?.coverage,
+      );
 
       logger.info(`Executing: ${command} ${args.join(' ')}`, 'TestRunner');
 
       const result = await this.executeTests(command, args, timeout);
-      const parsed = this.parseResults(framework, result.stdout, result.stderr, result.exitCode);
+      const parsed = this.parseResults(
+        framework,
+        result.stdout,
+        result.stderr,
+        result.exitCode,
+      );
 
       return {
         ...parsed,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -82,7 +97,7 @@ export class TestRunner {
         success: 0,
         failed: 0,
         duration: Date.now() - startTime,
-        failures: [{ test: 'Test Execution', message }]
+        failures: [{ test: 'Test Execution', message }],
       };
     }
   }
@@ -94,7 +109,10 @@ export class TestRunner {
     const pkgPath = path.join(this.workspacePath, 'package.json');
 
     if (!fs.existsSync(pkgPath)) {
-      logger.warn('No package.json found, defaulting to unknown framework', 'TestRunner');
+      logger.warn(
+        'No package.json found, defaulting to unknown framework',
+        'TestRunner',
+      );
       return 'unknown';
     }
 
@@ -133,7 +151,10 @@ export class TestRunner {
       logger.warn('Could not detect test framework', 'TestRunner');
       return 'unknown';
     } catch (error) {
-      logger.error('Failed to parse package.json for framework detection', 'TestRunner');
+      logger.error(
+        'Failed to parse package.json for framework detection',
+        'TestRunner',
+      );
       return 'unknown';
     }
   }
@@ -144,7 +165,7 @@ export class TestRunner {
   private getTestCommand(
     framework: TestFramework,
     files: string[],
-    coverage?: boolean
+    coverage?: boolean,
   ): { command: string; args: string[] } {
     const fileArgs = files.length > 0 ? files : [];
 
@@ -156,9 +177,11 @@ export class TestRunner {
             'jest',
             '--json',
             '--testLocationInResults',
-            ...(coverage ? ['--coverage', '--coverageReporters=json-summary'] : []),
-            ...fileArgs
-          ]
+            ...(coverage
+              ? ['--coverage', '--coverageReporters=json-summary']
+              : []),
+            ...fileArgs,
+          ],
         };
 
       case 'vitest':
@@ -169,25 +192,21 @@ export class TestRunner {
             'run',
             '--reporter=json',
             ...(coverage ? ['--coverage'] : []),
-            ...fileArgs
-          ]
+            ...fileArgs,
+          ],
         };
 
       case 'mocha':
         return {
           command: 'npx',
-          args: [
-            'mocha',
-            '--reporter', 'json',
-            ...fileArgs
-          ]
+          args: ['mocha', '--reporter', 'json', ...fileArgs],
         };
 
       default:
         // Fallback to npm test
         return {
           command: 'npm',
-          args: ['test', '--', ...fileArgs]
+          args: ['test', '--', ...fileArgs],
         };
     }
   }
@@ -198,7 +217,7 @@ export class TestRunner {
   private executeTests(
     command: string,
     args: string[],
-    timeout: number
+    timeout: number,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve) => {
       let stdout = '';
@@ -208,7 +227,7 @@ export class TestRunner {
       const proc = spawn(command, args, {
         cwd: this.workspacePath,
         shell: true,
-        env: { ...process.env, CI: 'true', FORCE_COLOR: '0' }
+        env: { ...process.env, CI: 'true', FORCE_COLOR: '0' },
       });
 
       const timeoutId = setTimeout(() => {
@@ -217,7 +236,7 @@ export class TestRunner {
         resolve({
           stdout,
           stderr: stderr + '\nTest execution timed out',
-          exitCode: 124
+          exitCode: 124,
         });
       }, timeout);
 
@@ -235,7 +254,7 @@ export class TestRunner {
           resolve({
             stdout: stdout.trim(),
             stderr: stderr.trim(),
-            exitCode: code ?? 1
+            exitCode: code ?? 1,
           });
         }
       });
@@ -246,7 +265,7 @@ export class TestRunner {
           resolve({
             stdout,
             stderr: err.message,
-            exitCode: 1
+            exitCode: 1,
           });
         }
       });
@@ -260,7 +279,7 @@ export class TestRunner {
     framework: TestFramework,
     stdout: string,
     stderr: string,
-    exitCode: number
+    exitCode: number,
   ): Omit<TestResult, 'duration'> {
     try {
       switch (framework) {
@@ -274,7 +293,10 @@ export class TestRunner {
           return this.parseFallbackOutput(exitCode, stderr);
       }
     } catch (error) {
-      logger.warn(`Failed to parse ${framework} output, using fallback`, 'TestRunner');
+      logger.warn(
+        `Failed to parse ${framework} output, using fallback`,
+        'TestRunner',
+      );
       return this.parseFallbackOutput(exitCode, stderr);
     }
   }
@@ -315,7 +337,7 @@ export class TestRunner {
         if (assertion.status === 'failed') {
           failures.push({
             test: assertion.fullName,
-            message: assertion.failureMessages.join('\n')
+            message: assertion.failureMessages.join('\n'),
           });
         }
       }
@@ -326,14 +348,14 @@ export class TestRunner {
       total: json.numTotalTests,
       success: json.numPassedTests,
       failed: json.numFailedTests,
-      failures
+      failures,
     };
 
     if (json.coverageSummary) {
       testResult.coverage = {
         lines: json.coverageSummary.lines.pct,
         functions: json.coverageSummary.functions.pct,
-        branches: json.coverageSummary.branches.pct
+        branches: json.coverageSummary.branches.pct,
       };
     }
 
@@ -361,11 +383,16 @@ export class TestRunner {
       total: json.stats.tests,
       success: json.stats.passes,
       failed: json.stats.failures,
-      failures: json.failures.map(f => ({
-        test: f.fullTitle,
-        message: f.err.message,
-        stack: f.err.stack
-      }))
+      failures: json.failures.map((f) => {
+        const failure: { test: string; message: string; stack?: string } = {
+          test: f.fullTitle,
+          message: f.err.message,
+        };
+        if (f.err.stack) {
+          failure.stack = f.err.stack;
+        }
+        return failure;
+      }),
     };
   }
 
@@ -389,18 +416,18 @@ export class TestRunner {
     };
 
     const tests = json.testResults || [];
-    const failed = tests.filter(t => t.status === 'failed');
-    const passed = tests.filter(t => t.status === 'passed');
+    const failed = tests.filter((t) => t.status === 'failed');
+    const passed = tests.filter((t) => t.status === 'passed');
 
     return {
       passed: failed.length === 0,
       total: tests.length,
       success: passed.length,
       failed: failed.length,
-      failures: failed.map(f => ({
+      failures: failed.map((f) => ({
         test: f.name,
-        message: f.message ?? 'Test failed'
-      }))
+        message: f.message ?? 'Test failed',
+      })),
     };
   }
 
@@ -409,21 +436,28 @@ export class TestRunner {
    */
   private parseFallbackOutput(
     exitCode: number,
-    stderr: string
+    stderr: string,
   ): Omit<TestResult, 'duration'> {
     const passed = exitCode === 0;
-    const hasError = stderr.toLowerCase().includes('fail') ||
-                     stderr.toLowerCase().includes('error');
+    const hasError =
+      stderr.toLowerCase().includes('fail') ||
+      stderr.toLowerCase().includes('error');
 
     return {
       passed: passed && !hasError,
       total: 0,
       success: 0,
       failed: passed ? 0 : 1,
-      failures: passed ? [] : [{
-        test: 'Test Suite',
-        message: stderr.slice(0, 1000) || 'Tests failed (exit code: ' + exitCode + ')'
-      }]
+      failures: passed
+        ? []
+        : [
+            {
+              test: 'Test Suite',
+              message:
+                stderr.slice(0, 1000) ||
+                'Tests failed (exit code: ' + exitCode + ')',
+            },
+          ],
     };
   }
 
@@ -442,6 +476,8 @@ export class TestRunner {
    * Find test files matching a pattern
    */
   async findTestFiles(pattern?: string): Promise<string[]> {
+    // Pattern and default patterns available for future glob implementation
+    void pattern;
     const defaultPatterns = [
       '**/*.test.ts',
       '**/*.test.js',
@@ -450,8 +486,9 @@ export class TestRunner {
       '**/test/**/*.ts',
       '**/test/**/*.js',
       '**/__tests__/**/*.ts',
-      '**/__tests__/**/*.js'
+      '**/__tests__/**/*.js',
     ];
+    void defaultPatterns;
 
     // This is a simple implementation - in production, use glob
     const testDir = path.join(this.workspacePath, 'test');
@@ -460,7 +497,10 @@ export class TestRunner {
     if (fs.existsSync(testDir)) {
       const entries = fs.readdirSync(testDir, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.isFile() && (entry.name.endsWith('.test.ts') || entry.name.endsWith('.test.js'))) {
+        if (
+          entry.isFile() &&
+          (entry.name.endsWith('.test.ts') || entry.name.endsWith('.test.js'))
+        ) {
           files.push(path.join('test', entry.name));
         }
       }

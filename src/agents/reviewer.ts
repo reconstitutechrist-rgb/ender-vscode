@@ -9,17 +9,17 @@ import type {
   AgentConfig,
   AgentResult,
   ReviewerOutput,
-  ValidationResult,
   ValidationPipelineResult,
-  ValidatorName,
   ValidatorMode,
   RollbackCheckpoint,
   Plan,
   ContextBundle,
-  FileChange
+  FileChange,
 } from '../types';
 import { logger, generateId, hashContent } from '../utils';
 import { validationPipeline } from '../validators';
+import { conductorAgent } from './conductor';
+import { gitManagerAgent } from './git-manager';
 
 const REVIEWER_SYSTEM_PROMPT = `You are the Reviewer Agent for Ender, an AI coding assistant.
 
@@ -62,43 +62,38 @@ export class ReviewerAgent extends BaseAgent {
       model: 'claude-opus-4-5-20251101',
       systemPrompt: REVIEWER_SYSTEM_PROMPT,
       capabilities: ['code_review', 'validation', 'quality_assurance'],
-      maxTokens: 4096
+      maxTokens: 4096,
     };
-    // @ts-ignore - apiClient is protected in BaseAgent but needed for constructor. 
-    // In real implementation we would inject it or use a singleton.
-    // For now assuming BaseAgent handles it or we pass a mock/global client.
-    // Actually BaseAgent constructor takes (config, apiClient).
-    // The previous code called super('reviewer', prompt) which was wrong.
-    // We need to fix how agents are instantiated. 
-    // In src/agents/index.ts, agents are instantiated: export const reviewerAgent = new ReviewerAgent();
-    // But BaseAgent needs apiClient. 
-    // We will use the global apiClient imported from ../api
-    super(config, require('../api').apiClient);
+    const { apiClient } = require('../api');
+    super(config, apiClient);
   }
 
   /**
    * Review code changes
    */
   async execute(params: AgentExecuteParams): Promise<AgentResult> {
-    const { task, context, planId, files } = params;
+    const { context, files } = params;
     const startTime = Date.now();
     const changes = files ?? [];
 
     logger.agent('reviewer', 'Starting code review', {
       fileCount: changes.length,
-      mode: this.validatorMode
+      mode: this.validatorMode,
     });
 
     try {
       // Create rollback checkpoint first
-      const checkpoint = await this.createCheckpoint(changes, context.currentPlan);
+      const checkpoint = await this.createCheckpoint(
+        changes,
+        context.currentPlan,
+      );
 
       // Run validation pipeline
       const pipelineResult = await this.runValidationPipeline(
         changes,
         context,
         this.validatorMode,
-        context.currentPlan
+        context.currentPlan,
       );
 
       // Attach checkpoint to result
@@ -108,32 +103,34 @@ export class ReviewerAgent extends BaseAgent {
       const reviewSummary = await this.generateReviewSummary(
         changes,
         pipelineResult,
-        context
+        context,
       );
 
       const output: ReviewerOutput = {
         approved: pipelineResult.passed,
         validationResults: pipelineResult.results,
         suggestions: reviewSummary.suggestions,
-        mustFix: reviewSummary.mustFix
+        mustFix: reviewSummary.mustFix,
       };
 
-      return this.createSuccessResult(
-        JSON.stringify(output, null, 2),
-        {
-          confidence: pipelineResult.passed ? 95 : 40,
-          tokensUsed: reviewSummary.tokensUsed,
-          startTime,
-          explanation: this.formatReviewExplanation(output, pipelineResult),
-          nextAgent: pipelineResult.passed ? 'documenter' : 'coder'
-        }
-      );
+      return this.createSuccessResult(JSON.stringify(output, null, 2), {
+        confidence: pipelineResult.passed ? 95 : 40,
+        tokensUsed: {
+          ...reviewSummary.tokensUsed,
+          total:
+            reviewSummary.tokensUsed.input + reviewSummary.tokensUsed.output,
+          cost: 0,
+        },
+        startTime,
+        explanation: this.formatReviewExplanation(output, pipelineResult),
+        nextAgent: pipelineResult.passed ? 'documenter' : 'coder',
+      });
     } catch (error) {
       logger.error('Reviewer agent failed', 'Reviewer', { error });
 
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
@@ -145,9 +142,40 @@ export class ReviewerAgent extends BaseAgent {
     changes: FileChange[],
     context: ContextBundle,
     mode: ValidatorMode,
-    plan?: Plan
+    plan?: Plan,
   ): Promise<ValidationPipelineResult> {
-    
+    // Validate plan scope before running pipeline
+    if (context.currentPlan) {
+      const proposedFiles = changes.map((c) => c.path);
+      const scopeResult = conductorAgent.validatePlanScope(proposedFiles, context);
+      if (!scopeResult.valid) {
+        logger.warn('Scope violations detected', 'Reviewer', {
+          violations: scopeResult.violations,
+        });
+        // Return early with scope violations as errors
+        return {
+          passed: false,
+          results: [
+            {
+              validator: 'scope-guard',
+              passed: false,
+              severity: 'error',
+              issues: scopeResult.violations.map((v) => ({
+                file: v,
+                message: `File "${v}" is not in the approved plan scope`,
+                severity: 'error' as const,
+              })),
+              duration: 0,
+            },
+          ],
+          totalIssues: scopeResult.violations.length,
+          errors: scopeResult.violations.length,
+          warnings: 0,
+          duration: 0,
+        };
+      }
+    }
+
     // Configure pipeline mode
     validationPipeline.setMode(mode);
 
@@ -157,14 +185,17 @@ export class ReviewerAgent extends BaseAgent {
       existingFiles.set(file.path, file.content);
     }
 
-      // Run pipeline
+    // Run pipeline
     return validationPipeline.run({
       changes,
       planId: plan?.id || '',
       phaseId: plan?.phases[plan.currentPhaseIndex]?.id || '',
       existingFiles,
       projectPath: context.projectPath ?? '',
-      config: context.projectSettings.effective as unknown as Record<string, unknown>
+      config: context.projectSettings.effective as unknown as Record<
+        string,
+        unknown
+      >,
     });
   }
 
@@ -173,24 +204,37 @@ export class ReviewerAgent extends BaseAgent {
    */
   private async createCheckpoint(
     changes: FileChange[],
-    plan?: Plan
+    plan?: Plan,
   ): Promise<RollbackCheckpoint> {
+    // Try git stash first for safer rollback
+    let checkpointType: 'git_stash' | 'file_backup' = 'file_backup';
+    try {
+      await gitManagerAgent.stashChanges();
+      checkpointType = 'git_stash';
+      logger.debug('Created git stash checkpoint', 'Reviewer');
+    } catch (error) {
+      logger.warn('Git stash failed, falling back to file backup', 'Reviewer', {
+        error,
+      });
+    }
+
     const checkpoint: RollbackCheckpoint = {
       id: generateId(),
       timestamp: new Date(),
-      type: 'file_backup',
-      files: changes.map(change => ({
+      type: checkpointType,
+      files: changes.map((change) => ({
         path: change.path,
         originalContent: '', // Would be loaded from disk
-        hash: hashContent(change.content)
+        hash: hashContent(change.content),
       })),
       planId: plan?.id || '',
-      phaseId: plan?.phases[plan.currentPhaseIndex]?.id || ''
+      phaseId: plan?.phases[plan.currentPhaseIndex]?.id || '',
     };
 
-    logger.debug('Created rollback checkpoint', 'Reviewer', { 
+    logger.debug('Created rollback checkpoint', 'Reviewer', {
       checkpointId: checkpoint.id,
-      fileCount: checkpoint.files.length
+      fileCount: checkpoint.files.length,
+      type: checkpointType,
     });
 
     return checkpoint;
@@ -202,7 +246,7 @@ export class ReviewerAgent extends BaseAgent {
   private async generateReviewSummary(
     changes: FileChange[],
     pipelineResult: ValidationPipelineResult,
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<{
     suggestions: string[];
     mustFix: string[];
@@ -217,7 +261,7 @@ export class ReviewerAgent extends BaseAgent {
         system: this.systemPrompt,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 2000,
-        metadata: { agent: this.type, taskId: generateId() }
+        metadata: { agent: this.type, taskId: generateId() },
       });
 
       const parsed = this.parseReviewResponse(response.content);
@@ -225,15 +269,15 @@ export class ReviewerAgent extends BaseAgent {
       return {
         suggestions: parsed.suggestions,
         mustFix: parsed.mustFix,
-        tokensUsed: response.usage
+        tokensUsed: response.usage,
       };
     } catch {
       return {
         suggestions: [],
         mustFix: pipelineResult.results
-          .filter(r => !r.passed)
-          .flatMap(r => r.issues.map(i => i.message)),
-        tokensUsed: { input: 0, output: 0 }
+          .filter((r) => !r.passed)
+          .flatMap((r) => r.issues.map((i) => i.message)),
+        tokensUsed: { input: 0, output: 0 },
       };
     }
   }
@@ -244,12 +288,14 @@ export class ReviewerAgent extends BaseAgent {
   private buildReviewPrompt(
     changes: FileChange[],
     pipelineResult: ValidationPipelineResult,
-    context: ContextBundle
+    _context: ContextBundle,
   ): string {
     const parts: string[] = [];
 
     parts.push('## Code Review Request\n');
-    parts.push(`Review the following ${changes.length} file(s) for issues and improvements.\n`);
+    parts.push(
+      `Review the following ${changes.length} file(s) for issues and improvements.\n`,
+    );
 
     // Changes
     parts.push('### Changes:');
@@ -266,15 +312,19 @@ export class ReviewerAgent extends BaseAgent {
       for (const result of pipelineResult.results) {
         if (result.issues.length > 0) {
           parts.push(`\n**${result.validator}:**`);
-          result.issues.forEach(issue => {
-            parts.push(`- [${issue.severity}] ${issue.file}:${issue.line ?? '?'}: ${issue.message}`);
+          result.issues.forEach((issue) => {
+            parts.push(
+              `- [${issue.severity}] ${issue.file}:${issue.line ?? '?'}: ${issue.message}`,
+            );
           });
         }
       }
     }
 
     parts.push('\n### Required Output:');
-    parts.push('Provide suggestions for improvement and list any must-fix issues.');
+    parts.push(
+      'Provide suggestions for improvement and list any must-fix issues.',
+    );
     parts.push('Format as JSON: { "suggestions": [...], "mustFix": [...] }');
 
     return parts.join('\n');
@@ -293,7 +343,7 @@ export class ReviewerAgent extends BaseAgent {
         const parsed = JSON.parse(jsonMatch[0]);
         return {
           suggestions: parsed.suggestions || [],
-          mustFix: parsed.mustFix || []
+          mustFix: parsed.mustFix || [],
         };
       }
     } catch {
@@ -308,7 +358,7 @@ export class ReviewerAgent extends BaseAgent {
    */
   private formatReviewExplanation(
     output: ReviewerOutput,
-    pipelineResult: ValidationPipelineResult
+    pipelineResult: ValidationPipelineResult,
   ): string {
     const lines: string[] = [];
 
@@ -317,17 +367,19 @@ export class ReviewerAgent extends BaseAgent {
       lines.push(`All ${pipelineResult.results.length} validators passed.`);
     } else {
       lines.push('❌ **Code Review Failed**\n');
-      lines.push(`Found ${pipelineResult.errors} error(s) and ${pipelineResult.warnings} warning(s).`);
+      lines.push(
+        `Found ${pipelineResult.errors} error(s) and ${pipelineResult.warnings} warning(s).`,
+      );
     }
 
     if (output.mustFix.length > 0) {
       lines.push('\n**Must Fix:**');
-      output.mustFix.forEach(issue => lines.push(`- ${issue}`));
+      output.mustFix.forEach((issue) => lines.push(`- ${issue}`));
     }
 
     if (output.suggestions.length > 0) {
       lines.push('\n**Suggestions:**');
-      output.suggestions.forEach(s => lines.push(`- ${s}`));
+      output.suggestions.forEach((s) => lines.push(`- ${s}`));
     }
 
     return lines.join('\n');

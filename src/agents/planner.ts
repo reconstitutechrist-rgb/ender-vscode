@@ -10,11 +10,12 @@ import { generateId } from '../utils';
 import type {
   AgentConfig,
   AgentResult,
+  AgentType,
   Plan,
   PlanPhase,
   PlanTask,
   PlanMetadata,
-  TaskType
+  TaskType,
 } from '../types';
 
 const PLANNER_SYSTEM_PROMPT = `You are the Planner agent for Ender, an AI coding assistant. Your role is to:
@@ -86,9 +87,9 @@ export class PlannerAgent extends BaseAgent {
         'implementation_planning',
         'complexity_estimation',
         'dependency_identification',
-        'scope_definition'
+        'scope_definition',
       ],
-      maxTokens: 8192
+      maxTokens: 8192,
     };
     super(config, apiClient);
   }
@@ -109,11 +110,7 @@ export class PlannerAgent extends BaseAgent {
         system: systemPrompt,
         messages,
         maxTokens: this.maxTokens,
-        metadata: {
-          agent: this.type,
-          taskId: generateId(),
-          planId: params.planId
-        }
+        metadata: this.buildMetadata(generateId(), params.planId),
       });
 
       // Parse the plan
@@ -124,15 +121,16 @@ export class PlannerAgent extends BaseAgent {
           confidence: 60,
           tokensUsed: response.usage,
           startTime,
-          explanation: 'Could not parse structured plan, returning raw response',
-          warnings: ['Plan could not be parsed into structured format']
+          explanation:
+            'Could not parse structured plan, returning raw response',
+          warnings: ['Plan could not be parsed into structured format'],
         });
       }
 
-      this.log('Plan created', { 
-        planId: plan.id, 
+      this.log('Plan created', {
+        planId: plan.id,
         phases: plan.phases.length,
-        files: plan.affectedFiles.length 
+        files: plan.affectedFiles.length,
       });
 
       return this.createSuccessResult(JSON.stringify(plan, null, 2), {
@@ -140,14 +138,13 @@ export class PlannerAgent extends BaseAgent {
         tokensUsed: response.usage,
         startTime,
         explanation: `Created plan with ${plan.phases.length} phases affecting ${plan.affectedFiles.length} files`,
-        nextAgent: 'coder'
+        nextAgent: 'coder',
       });
-
     } catch (error) {
       this.log('Error in planner', { error });
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
@@ -158,7 +155,7 @@ export class PlannerAgent extends BaseAgent {
   private parsePlan(content: string, originalRequest: string): Plan | null {
     // Extract JSON from response
     const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/);
-    
+
     if (!jsonMatch?.[1]) {
       return null;
     }
@@ -168,33 +165,37 @@ export class PlannerAgent extends BaseAgent {
       const planId = generateId();
 
       // Build phases
-      const phases: PlanPhase[] = (parsed.phases || []).map((phase: Record<string, unknown>, index: number) => {
-        const phaseId = generateId();
-        
-        const tasks: PlanTask[] = ((phase.tasks as Record<string, unknown>[]) || []).map((task: Record<string, unknown>) => ({
-          id: generateId(),
-          phaseId,
-          description: task.description as string || '',
-          type: (task.type as TaskType) || 'single_file_small_change',
-          status: 'pending' as const,
-          targetFile: task.targetFile as string,
-          targetFunction: task.targetFunction as string,
-          expectedChanges: task.expectedChanges as string
-        }));
+      const phases: PlanPhase[] = (parsed.phases || []).map(
+        (phase: Record<string, unknown>, index: number) => {
+          const phaseId = generateId();
 
-        return {
-          id: phaseId,
-          planId,
-          index,
-          title: phase.title as string || `Phase ${index + 1}`,
-          description: phase.description as string || '',
-          status: 'pending' as const,
-          tasks,
-          affectedFiles: (phase.affectedFiles as string[]) || [],
-          estimatedTokens: (phase.estimatedTokens as number) || 1000,
-          actualTokensUsed: 0
-        };
-      });
+          const tasks: PlanTask[] = (
+            (phase.tasks as Record<string, unknown>[]) || []
+          ).map((task: Record<string, unknown>) => ({
+            id: generateId(),
+            phaseId,
+            description: (task.description as string) || '',
+            type: (task.type as TaskType) || 'single_file_small_change',
+            status: 'pending' as const,
+            targetFile: task.targetFile as string,
+            targetFunction: task.targetFunction as string,
+            expectedChanges: task.expectedChanges as string,
+          }));
+
+          return {
+            id: phaseId,
+            planId,
+            index,
+            title: (phase.title as string) || `Phase ${index + 1}`,
+            description: (phase.description as string) || '',
+            status: 'pending' as const,
+            tasks,
+            affectedFiles: (phase.affectedFiles as string[]) || [],
+            estimatedTokens: (phase.estimatedTokens as number) || 1000,
+            actualTokensUsed: 0,
+          };
+        },
+      );
 
       // Collect all affected files
       const allAffectedFiles = new Set<string>();
@@ -211,7 +212,7 @@ export class PlannerAgent extends BaseAgent {
         risks: parsed.metadata?.risks || [],
         dependencies: parsed.metadata?.dependencies || [],
         testingStrategy: parsed.metadata?.testingStrategy,
-        rollbackPlan: parsed.metadata?.rollbackPlan
+        rollbackPlan: parsed.metadata?.rollbackPlan,
       };
 
       const plan: Plan = {
@@ -222,15 +223,16 @@ export class PlannerAgent extends BaseAgent {
         phases,
         currentPhaseIndex: 0,
         estimatedComplexity: parsed.estimatedComplexity || 'medium',
-        estimatedTokens: parsed.estimatedTokens || phases.reduce((sum, p) => sum + p.estimatedTokens, 0),
+        estimatedTokens:
+          parsed.estimatedTokens ||
+          phases.reduce((sum, p) => sum + p.estimatedTokens, 0),
         actualTokensUsed: 0,
         affectedFiles: [...allAffectedFiles],
         createdAt: new Date(),
-        metadata
+        metadata,
       };
 
       return plan;
-
     } catch (error) {
       this.log('Failed to parse plan JSON', { error });
       return null;
@@ -296,7 +298,7 @@ export class PlannerAgent extends BaseAgent {
     for (let i = 0; i < plan.phases.length; i++) {
       const phase = plan.phases[i];
       if (!phase) continue;
-      
+
       if (!phase.title) {
         issues.push(`Phase ${i + 1} missing title`);
       }
@@ -309,21 +311,26 @@ export class PlannerAgent extends BaseAgent {
     }
 
     // Check for circular dependencies (simplified)
-    const phaseFiles = plan.phases.map(p => new Set(p.affectedFiles));
+    const phaseFiles = plan.phases.map((p) => new Set(p.affectedFiles));
     for (let i = 0; i < phaseFiles.length - 1; i++) {
       for (let j = i + 1; j < phaseFiles.length; j++) {
-        const overlap = [...(phaseFiles[i] || [])].filter(f => phaseFiles[j]?.has(f));
+        const overlap = [...(phaseFiles[i] || [])].filter((f) =>
+          phaseFiles[j]?.has(f),
+        );
         if (overlap.length > 0) {
           // This is actually okay - later phases can modify files from earlier phases
           // But we should note it
-          this.log('Overlapping files between phases', { phases: [i + 1, j + 1], files: overlap });
+          this.log('Overlapping files between phases', {
+            phases: [i + 1, j + 1],
+            files: overlap,
+          });
         }
       }
     }
 
     return {
       valid: issues.length === 0,
-      issues
+      issues,
     };
   }
 
@@ -332,7 +339,7 @@ export class PlannerAgent extends BaseAgent {
    */
   advancePlan(plan: Plan, tokensUsed: number): Plan {
     const updatedPlan = { ...plan };
-    
+
     // Update current phase
     const currentPhase = updatedPlan.phases[updatedPlan.currentPhaseIndex];
     if (currentPhase) {
@@ -354,6 +361,23 @@ export class PlannerAgent extends BaseAgent {
     updatedPlan.actualTokensUsed += tokensUsed;
 
     return updatedPlan;
+  }
+
+  /**
+   * Build metadata object for API calls
+   */
+  private buildMetadata(
+    taskId: string,
+    planId?: string,
+  ): { agent: AgentType; taskId: string; planId?: string } {
+    const meta: { agent: AgentType; taskId: string; planId?: string } = {
+      agent: this.type,
+      taskId,
+    };
+    if (planId) {
+      meta.planId = planId;
+    }
+    return meta;
   }
 }
 

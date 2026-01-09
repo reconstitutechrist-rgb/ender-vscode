@@ -35,8 +35,12 @@ export class DebuggerAgent extends BaseAgent {
       type: 'debugger',
       model: 'claude-opus-4-5-20251101',
       systemPrompt: DEBUGGER_SYSTEM_PROMPT,
-      capabilities: ['error_analysis', 'root_cause_identification', 'fix_suggestion'],
-      maxTokens: 4096
+      capabilities: [
+        'error_analysis',
+        'root_cause_identification',
+        'fix_suggestion',
+      ],
+      maxTokens: 4096,
     };
     super(config, apiClient);
   }
@@ -52,7 +56,7 @@ export class DebuggerAgent extends BaseAgent {
         system: this.buildSystemPrompt(context),
         messages: this.buildMessages(prompt, context),
         maxTokens: this.maxTokens,
-        metadata: { agent: 'debugger', taskId: generateId() }
+        metadata: { agent: 'debugger', taskId: generateId() },
       });
 
       return this.createSuccessResult(response.content, {
@@ -60,13 +64,13 @@ export class DebuggerAgent extends BaseAgent {
         confidence: 80,
         tokensUsed: response.usage,
         startTime,
-        nextAgent: 'coder'
+        nextAgent: 'coder',
       });
     } catch (error) {
       logger.error('Debugger failed', 'Debugger', { error });
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
@@ -74,7 +78,7 @@ export class DebuggerAgent extends BaseAgent {
   private buildDebugPrompt(
     task: string,
     options: { error?: string; stackTrace?: string } | undefined,
-    context: ContextBundle
+    context: ContextBundle,
   ): string {
     let prompt = `## Debugging Request\n${task}\n\n`;
 
@@ -88,7 +92,7 @@ export class DebuggerAgent extends BaseAgent {
 
     if (context.relevantFiles.length > 0) {
       prompt += '## Relevant Code\n';
-      context.relevantFiles.forEach(f => {
+      context.relevantFiles.forEach((f) => {
         prompt += `\n### ${f.path}\n\`\`\`${f.language}\n${f.content}\n\`\`\``;
       });
     }

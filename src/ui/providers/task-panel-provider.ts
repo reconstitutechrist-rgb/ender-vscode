@@ -5,7 +5,7 @@
 
 import * as vscode from 'vscode';
 import { logger } from '../../utils';
-import type { AgentStatus, Plan, PlanPhase } from '../../types';
+import type { AgentStatus, Plan } from '../../types';
 
 interface TaskItem {
   id: string;
@@ -31,13 +31,13 @@ export class TaskPanelProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
+    _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this.extensionUri]
+      localResourceRoots: [this.extensionUri],
     };
 
     webviewView.webview.html = this.getHtmlContent(webviewView.webview);
@@ -73,14 +73,17 @@ export class TaskPanelProvider implements vscode.WebviewViewProvider {
   addTask(task: TaskItem): void {
     this.tasks.push(task);
     this.updateView();
-    logger.info('Task added', 'TaskPanel', { taskId: task.id, title: task.title });
+    logger.info('Task added', 'TaskPanel', {
+      taskId: task.id,
+      title: task.title,
+    });
   }
 
   /**
    * Update task status
    */
   updateTask(taskId: string, updates: Partial<TaskItem>): void {
-    const task = this.tasks.find(t => t.id === taskId);
+    const task = this.tasks.find((t) => t.id === taskId);
     if (task) {
       Object.assign(task, updates);
       this.updateView();
@@ -107,7 +110,7 @@ export class TaskPanelProvider implements vscode.WebviewViewProvider {
    * Clear completed tasks
    */
   clearCompleted(): void {
-    this.tasks = this.tasks.filter(t => t.status !== 'completed');
+    this.tasks = this.tasks.filter((t) => t.status !== 'completed');
     this.updateView();
   }
 
@@ -124,27 +127,34 @@ export class TaskPanelProvider implements vscode.WebviewViewProvider {
   private async cancelTask(taskId: string): Promise<void> {
     const confirm = await vscode.window.showWarningMessage(
       'Cancel this task?',
-      'Yes', 'No'
+      'Yes',
+      'No',
     );
     if (confirm === 'Yes') {
-      this.tasks = this.tasks.filter(t => t.id !== taskId);
+      this.tasks = this.tasks.filter((t) => t.id !== taskId);
       this.updateView();
       vscode.window.showInformationMessage('Task cancelled');
     }
   }
 
   private async retryTask(taskId: string): Promise<void> {
-    this.updateTask(taskId, { status: 'pending', error: undefined });
+    // Clear error by finding task and removing the property
+    const task = this.tasks.find((t) => t.id === taskId);
+    if (task) {
+      delete task.error;
+      task.status = 'pending';
+      this.updateView();
+    }
   }
 
   private async viewTaskDetails(taskId: string): Promise<void> {
-    const task = this.tasks.find(t => t.id === taskId);
+    const task = this.tasks.find((t) => t.id === taskId);
     if (task) {
       const panel = vscode.window.createWebviewPanel(
         'enderTaskDetails',
         `Task: ${task.title}`,
         vscode.ViewColumn.Two,
-        { enableScripts: true }
+        { enableScripts: true },
       );
       panel.webview.html = this.getTaskDetailsHtml(task);
     }
@@ -156,7 +166,7 @@ export class TaskPanelProvider implements vscode.WebviewViewProvider {
         type: 'update',
         tasks: this.tasks,
         plan: this.currentPlan,
-        agents: Array.from(this.agentStatuses.values())
+        agents: Array.from(this.agentStatuses.values()),
       });
     }
   }
@@ -439,30 +449,46 @@ export class TaskPanelProvider implements vscode.WebviewViewProvider {
     <div class="label">Description</div>
     <div class="value">${task.description}</div>
   </div>
-  ${task.agent ? `
+  ${
+    task.agent
+      ? `
   <div class="field">
     <div class="label">Agent</div>
     <div class="value">${task.agent}</div>
   </div>
-  ` : ''}
-  ${task.startedAt ? `
+  `
+      : ''
+  }
+  ${
+    task.startedAt
+      ? `
   <div class="field">
     <div class="label">Started</div>
     <div class="value">${task.startedAt.toLocaleString()}</div>
   </div>
-  ` : ''}
-  ${task.completedAt ? `
+  `
+      : ''
+  }
+  ${
+    task.completedAt
+      ? `
   <div class="field">
     <div class="label">Completed</div>
     <div class="value">${task.completedAt.toLocaleString()}</div>
   </div>
-  ` : ''}
-  ${task.error ? `
+  `
+      : ''
+  }
+  ${
+    task.error
+      ? `
   <div class="field">
     <div class="label">Error</div>
     <div class="value error"><pre>${task.error}</pre></div>
   </div>
-  ` : ''}
+  `
+      : ''
+  }
 </body>
 </html>`;
   }

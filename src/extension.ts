@@ -12,11 +12,20 @@ import * as vscode from 'vscode';
 import { logger } from './utils';
 import { apiClient } from './api';
 import { memoryManager } from './memory';
-import { conductorAgent, agentRegistry } from './agents';
+import { conductorAgent, agentRegistry, gitManagerAgent } from './agents';
 import { contextAssembler } from './context/context-assembler';
-import { fileRelevanceScorer, FileRelevanceScorer } from './context/file-relevance';
+import {
+  fileRelevanceScorer,
+  FileRelevanceScorer,
+} from './context/file-relevance';
 import { sqliteClient } from './storage';
-import { ChatPanelProvider, StatusBarProvider, TaskPanelProvider, MemoryTreeProvider, InstructionTreeProvider } from './ui/providers';
+import {
+  ChatPanelProvider,
+  StatusBarProvider,
+  TaskPanelProvider,
+  MemoryTreeProvider,
+  InstructionTreeProvider,
+} from './ui/providers';
 import { SessionRecoveryManager } from './recovery';
 import type { ExtensionState, AgentType, ConductorDecision } from './types';
 
@@ -28,7 +37,9 @@ let sessionManager: SessionRecoveryManager;
 /**
  * Extension activation
  */
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   // Initialize logger
   const outputChannel = vscode.window.createOutputChannel('Ender');
   logger.initialize(outputChannel);
@@ -47,9 +58,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         today: 0,
         thisMonth: 0,
         allTime: 0,
-        lastUpdated: new Date()
+        lastUpdated: new Date(),
       },
-      sessionId: generateSessionId()
+      sessionId: generateSessionId(),
     };
     if (workspaceFolder) {
       extensionState.workspaceFolder = workspaceFolder;
@@ -88,7 +99,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       showWelcomeMessage();
       context.globalState.update('ender.welcomed', true);
     }
-
   } catch (error) {
     logger.error('Failed to activate Ender extension', 'Extension', { error });
     vscode.window.showErrorMessage(`Ender failed to activate: ${error}`);
@@ -128,8 +138,11 @@ async function initializeWorkspace(workspacePath: string): Promise<void> {
   logger.info('Initializing workspace', 'Extension', { workspacePath });
 
   // Check for .ender folder
-  const enderPath = vscode.Uri.joinPath(vscode.Uri.file(workspacePath), '.ender');
-  
+  const enderPath = vscode.Uri.joinPath(
+    vscode.Uri.file(workspacePath),
+    '.ender',
+  );
+
   try {
     await vscode.workspace.fs.stat(enderPath);
     extensionState.hasProject = true;
@@ -144,7 +157,9 @@ async function initializeWorkspace(workspacePath: string): Promise<void> {
   // Initialize agents
   initializeAgents(workspacePath);
 
-  logger.info('Workspace initialized', 'Extension', { hasProject: extensionState.hasProject });
+  logger.info('Workspace initialized', 'Extension', {
+    hasProject: extensionState.hasProject,
+  });
 }
 
 /**
@@ -156,25 +171,28 @@ async function initializeUI(context: vscode.ExtensionContext): Promise<void> {
     handleUserMessage(message);
   });
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('ender.chat', chatProvider)
+    vscode.window.registerWebviewViewProvider('ender.chat', chatProvider),
   );
 
   // Register task panel provider
   const taskProvider = new TaskPanelProvider(context.extensionUri);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('ender.tasks', taskProvider)
+    vscode.window.registerWebviewViewProvider('ender.tasks', taskProvider),
   );
 
   // Register memory tree provider
   const memoryProvider = new MemoryTreeProvider();
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider('ender.memory', memoryProvider)
+    vscode.window.registerTreeDataProvider('ender.memory', memoryProvider),
   );
 
   // Register instruction tree provider
   const instructionProvider = new InstructionTreeProvider();
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider('ender.instructions', instructionProvider)
+    vscode.window.registerTreeDataProvider(
+      'ender.instructions',
+      instructionProvider,
+    ),
   );
 
   // Initialize status bar
@@ -193,7 +211,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('ender.openChat', () => {
       vscode.commands.executeCommand('ender.chat.focus');
-    })
+    }),
   );
 
   // New task command
@@ -201,48 +219,48 @@ function registerCommands(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('ender.newTask', async () => {
       const task = await vscode.window.showInputBox({
         prompt: 'What would you like Ender to help with?',
-        placeHolder: 'Describe your task...'
+        placeHolder: 'Describe your task...',
       });
 
       if (task) {
         await handleNewTask(task);
       }
-    })
+    }),
   );
 
   // View memory command
   context.subscriptions.push(
     vscode.commands.registerCommand('ender.viewMemory', () => {
       vscode.commands.executeCommand('ender.memory.focus');
-    })
+    }),
   );
 
   // Undo command
   context.subscriptions.push(
     vscode.commands.registerCommand('ender.undo', async () => {
       await handleUndo();
-    })
+    }),
   );
 
   // Rollback command
   context.subscriptions.push(
     vscode.commands.registerCommand('ender.rollback', async () => {
       await handleRollback();
-    })
+    }),
   );
 
   // Export memory command
   context.subscriptions.push(
     vscode.commands.registerCommand('ender.exportMemory', async () => {
       await handleExportMemory();
-    })
+    }),
   );
 
   // Import memory command
   context.subscriptions.push(
     vscode.commands.registerCommand('ender.importMemory', async () => {
       await handleImportMemory();
-    })
+    }),
   );
 
   // Toggle strict mode command
@@ -253,14 +271,14 @@ function registerCommands(context: vscode.ExtensionContext): void {
       const newMode = currentMode === 'strict' ? 'fast' : 'strict';
       config.update('validatorMode', newMode, true);
       vscode.window.showInformationMessage(`Validator mode: ${newMode}`);
-    })
+    }),
   );
 
   // Show assumptions command
   context.subscriptions.push(
     vscode.commands.registerCommand('ender.showAssumptions', async () => {
       await showAssumptionLog();
-    })
+    }),
   );
 
   // Clear history command
@@ -268,14 +286,15 @@ function registerCommands(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('ender.clearHistory', async () => {
       const confirm = await vscode.window.showWarningMessage(
         'Clear all conversation history?',
-        'Yes', 'No'
+        'Yes',
+        'No',
       );
       if (confirm === 'Yes') {
         // Clear conversation history
         logger.info('Conversation history cleared', 'Extension');
         vscode.window.showInformationMessage('History cleared');
       }
-    })
+    }),
   );
 
   logger.info('Commands registered', 'Extension');
@@ -295,7 +314,7 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
           await initializeWorkspace(newFolder);
         }
       }
-    })
+    }),
   );
 
   // Configuration changes
@@ -304,14 +323,14 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration('ender')) {
         handleConfigChange();
       }
-    })
+    }),
   );
 
   // File save events (for auto-memory triggers)
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((_document) => {
       // Could trigger memory updates here
-    })
+    }),
   );
 
   logger.info('Event handlers registered', 'Extension');
@@ -330,23 +349,28 @@ async function handleUserMessage(message: string): Promise<void> {
  */
 async function handleNewTask(task: string): Promise<void> {
   if (!extensionState.apiKeyConfigured) {
-    chatProvider.addAssistantMessage('Please configure your API key in settings to use Ender.');
+    chatProvider.addAssistantMessage(
+      'Please configure your API key in settings to use Ender.',
+    );
     const action = await vscode.window.showErrorMessage(
       'API key not configured',
-      'Configure API Key'
+      'Configure API Key',
     );
     if (action === 'Configure API Key') {
-      vscode.commands.executeCommand('workbench.action.openSettings', 'ender.apiKey');
+      vscode.commands.executeCommand(
+        'workbench.action.openSettings',
+        'ender.apiKey',
+      );
     }
     return;
   }
 
   logger.info('New task received', 'Extension', { task: task.slice(0, 100) });
-  
+
   try {
     statusBar.setStatus('working', 'Processing task...');
     chatProvider.setProcessing(true);
-    
+
     // Assemble context
     const relevantFiles = await getRelevantFiles(task);
     const assembleParams: Parameters<typeof contextAssembler.assemble>[0] = {
@@ -354,9 +378,41 @@ async function handleNewTask(task: string): Promise<void> {
       activeMemory: await memoryManager.getHotMemories(),
       conversationHistory: chatProvider.getMessages(),
       projectSettings: {
+        global: {
+          version: '1.0.0',
+          apiKey: { source: 'user' },
+          models: {
+            smart: 'claude-opus-4-5-20251101',
+            fast: 'claude-sonnet-4-5-20250929',
+          },
+          defaults: {
+            approvalMode: 'hybrid',
+            approvalGranularity: {
+              entirePlan: true,
+              perPhase: false,
+              perFile: false,
+            },
+            confidenceThreshold: 80,
+            validatorMode: 'fast',
+            contextBudget: { maxTokens: 100000, reserveForResponse: 8000 },
+          },
+          ui: {
+            showAgentIndicator: true,
+            showCostTracker: true,
+            showContextUsage: true,
+          },
+          telemetry: { enabled: false },
+          sessionRecovery: { enabled: true, intervalSeconds: 60 },
+          undoStack: { maxLevels: 10 },
+          sensitiveFilePatterns: ['.env', '*.key', '*.pem'],
+        },
         effective: {
           approvalMode: 'hybrid',
-          approvalGranularity: { entirePlan: true, perPhase: false, perFile: false },
+          approvalGranularity: {
+            entirePlan: true,
+            perPhase: false,
+            perFile: false,
+          },
           confidenceThreshold: 80,
           validatorMode: 'fast',
           contextBudget: { maxTokens: 100000, reserveForResponse: 8000 },
@@ -364,24 +420,22 @@ async function handleNewTask(task: string): Promise<void> {
           codingStyle: 'functional',
           commentLevel: 'moderate',
           customRules: [],
-          sensitiveFilePatterns: ['.env', '*.key', '*.pem']
+          sensitiveFilePatterns: ['.env', '*.key', '*.pem'],
         },
-        source: 'default'
-      }
+      },
     };
-    if (extensionState.workspaceFolder) {
-      assembleParams.projectPath = extensionState.workspaceFolder;
-    }
     const context = await contextAssembler.assemble(assembleParams);
 
     // Execute Conductor
     const conductorResult = await conductorAgent.execute({
       task,
-      context
+      context,
     });
 
     if (!conductorResult.success) {
-      throw new Error(conductorResult.errors?.[0]?.message || 'Conductor failed');
+      throw new Error(
+        conductorResult.errors?.[0]?.message || 'Conductor failed',
+      );
     }
 
     // Parse decision
@@ -404,8 +458,8 @@ async function handleNewTask(task: string): Promise<void> {
     // Handle agent routing
     if (decision.selectedAgents && decision.selectedAgents.length > 0) {
       chatProvider.addAssistantMessage(
-        `I'll have ${decision.selectedAgents.join(', ')} handle this. ${decision.routingReason}`, 
-        'conductor'
+        `I'll have ${decision.selectedAgents.join(', ')} handle this. ${decision.routingReason}`,
+        'conductor',
       );
 
       for (const agentType of decision.selectedAgents) {
@@ -416,34 +470,43 @@ async function handleNewTask(task: string): Promise<void> {
         }
 
         chatProvider.setCurrentAgent(agentType as AgentType);
-        
+
         const agentResult = await agent.execute({
           task,
-          context
+          context,
         });
 
         if (agentResult.success) {
-          chatProvider.addAssistantMessage(agentResult.output, agentType as AgentType);
-          
+          chatProvider.addAssistantMessage(
+            agentResult.output ?? '',
+            agentType as AgentType,
+          );
+
           if (agentResult.files) {
-             // Handle file changes (apply or show diff)
-             // For now, we just notify
-             vscode.window.showInformationMessage(`Agent ${agentType} proposed ${agentResult.files.length} changes`);
+            // Handle file changes (apply or show diff)
+            // For now, we just notify
+            vscode.window.showInformationMessage(
+              `Agent ${agentType} proposed ${agentResult.files.length} changes`,
+            );
           }
         } else {
           chatProvider.addAssistantMessage(
-            `I encountered an error: ${agentResult.errors?.[0]?.message}`, 
-            agentType as AgentType
+            `I encountered an error: ${agentResult.errors?.[0]?.message}`,
+            agentType as AgentType,
           );
         }
       }
     } else {
-      chatProvider.addAssistantMessage(conductorResult.output, 'conductor');
+      chatProvider.addAssistantMessage(
+        conductorResult.output ?? '',
+        'conductor',
+      );
     }
-    
   } catch (error) {
     logger.error('Task failed', 'Extension', { error });
-    chatProvider.addAssistantMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    chatProvider.addAssistantMessage(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
   } finally {
     statusBar.setStatus('idle');
     chatProvider.setProcessing(false);
@@ -454,7 +517,10 @@ async function handleNewTask(task: string): Promise<void> {
 /**
  * Get relevant files for a task using smart file selection
  */
-async function getRelevantFiles(task: string, limit: number = 15): Promise<import('./types').FileContent[]> {
+async function getRelevantFiles(
+  task: string,
+  limit: number = 15,
+): Promise<import('./types').FileContent[]> {
   if (!extensionState.workspaceFolder) {
     return [];
   }
@@ -464,7 +530,7 @@ async function getRelevantFiles(task: string, limit: number = 15): Promise<impor
     const files = await vscode.workspace.findFiles(
       '**/*.{ts,tsx,js,jsx,py,go,java,rs,rb,php,vue,svelte}',
       '**/node_modules/**',
-      100
+      100,
     );
 
     // Read file contents
@@ -480,7 +546,7 @@ async function getRelevantFiles(task: string, limit: number = 15): Promise<impor
           path: relativePath,
           content: new TextDecoder('utf-8').decode(content),
           language: getLanguageFromPath(uri.fsPath),
-          lastModified: new Date(stat.mtime)
+          lastModified: new Date(stat.mtime),
         });
       } catch {
         // Skip files that can't be read
@@ -491,11 +557,15 @@ async function getRelevantFiles(task: string, limit: number = 15): Promise<impor
     const scoringContext = {
       query: task,
       recentMessages: chatProvider.getMessages().slice(-5),
-      imports: FileRelevanceScorer.buildImportMap(fileContents)
+      imports: FileRelevanceScorer.buildImportMap(fileContents),
     };
 
     // Get most relevant files
-    return fileRelevanceScorer.getMostRelevant(fileContents, scoringContext, limit);
+    return fileRelevanceScorer.getMostRelevant(
+      fileContents,
+      scoringContext,
+      limit,
+    );
   } catch (error) {
     logger.error('Failed to get relevant files', 'Extension', { error });
     return [];
@@ -508,18 +578,18 @@ async function getRelevantFiles(task: string, limit: number = 15): Promise<impor
 function getLanguageFromPath(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
   const langMap: Record<string, string> = {
-    'ts': 'typescript',
-    'tsx': 'typescriptreact',
-    'js': 'javascript',
-    'jsx': 'javascriptreact',
-    'py': 'python',
-    'go': 'go',
-    'java': 'java',
-    'rs': 'rust',
-    'rb': 'ruby',
-    'php': 'php',
-    'vue': 'vue',
-    'svelte': 'svelte'
+    ts: 'typescript',
+    tsx: 'typescriptreact',
+    js: 'javascript',
+    jsx: 'javascriptreact',
+    py: 'python',
+    go: 'go',
+    java: 'java',
+    rs: 'rust',
+    rb: 'ruby',
+    php: 'php',
+    vue: 'vue',
+    svelte: 'svelte',
   };
   return langMap[ext] || 'text';
 }
@@ -533,13 +603,13 @@ async function handleUndo(): Promise<void> {
     vscode.window.showInformationMessage('Nothing to undo');
     return;
   }
-  
+
   // Restore files
   for (const file of undoEntry.filesBefore) {
     const uri = vscode.Uri.file(file.path);
     await vscode.workspace.fs.writeFile(uri, Buffer.from(file.content));
   }
-  
+
   vscode.window.showInformationMessage(`Undid: ${undoEntry.description}`);
 }
 
@@ -548,7 +618,9 @@ async function handleUndo(): Promise<void> {
  */
 async function handleRollback(): Promise<void> {
   // In a full implementation, show a picker for checkpoints
-  const id = await vscode.window.showInputBox({ prompt: 'Enter Checkpoint ID' });
+  const id = await vscode.window.showInputBox({
+    prompt: 'Enter Checkpoint ID',
+  });
   if (!id) return;
 
   const checkpoint = sqliteClient.getCheckpoint(id);
@@ -561,8 +633,10 @@ async function handleRollback(): Promise<void> {
     const uri = vscode.Uri.file(file.path);
     await vscode.workspace.fs.writeFile(uri, Buffer.from(file.content));
   }
-  
-  vscode.window.showInformationMessage(`Rolled back to: ${checkpoint.description || id}`);
+
+  vscode.window.showInformationMessage(
+    `Rolled back to: ${checkpoint.description || id}`,
+  );
 }
 
 /**
@@ -571,10 +645,10 @@ async function handleRollback(): Promise<void> {
 async function handleExportMemory(): Promise<void> {
   try {
     const data = await memoryManager.export();
-    
+
     const uri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file('ender-memory-export.json'),
-      filters: { 'JSON': ['json'] }
+      filters: { JSON: ['json'] },
     });
 
     if (uri) {
@@ -594,16 +668,16 @@ async function handleImportMemory(): Promise<void> {
   try {
     const uris = await vscode.window.showOpenDialog({
       canSelectMany: false,
-      filters: { 'JSON': ['json'] }
+      filters: { JSON: ['json'] },
     });
 
     if (uris && uris[0]) {
       const content = await vscode.workspace.fs.readFile(uris[0]);
       const data = JSON.parse(Buffer.from(content).toString());
-      
+
       const result = await memoryManager.import(data);
       vscode.window.showInformationMessage(
-        `Imported ${result.imported} entries, skipped ${result.skipped}`
+        `Imported ${result.imported} entries, skipped ${result.skipped}`,
       );
     }
   } catch (error) {
@@ -616,7 +690,9 @@ async function handleImportMemory(): Promise<void> {
  */
 async function showAssumptionLog(): Promise<void> {
   // Simple implementation using memory manager
-  const searchResult = await memoryManager.search({ categories: ['known_issues'] });
+  const searchResult = await memoryManager.search({
+    categories: ['known_issues'],
+  });
   const assumptions = searchResult.entries;
   if (assumptions.length === 0) {
     vscode.window.showInformationMessage('No active assumptions tracked');
@@ -624,12 +700,14 @@ async function showAssumptionLog(): Promise<void> {
   }
 
   const selected = await vscode.window.showQuickPick(
-    assumptions.map((a: { summary: string; detail: string; status: string }) => ({
-      label: a.summary,
-      detail: a.detail,
-      description: a.status
-    })),
-    { title: 'Active Assumptions' }
+    assumptions.map(
+      (a: { summary: string; detail: string; status: string }) => ({
+        label: a.summary,
+        detail: a.detail,
+        description: a.status,
+      }),
+    ),
+    { title: 'Active Assumptions' },
   );
 
   if (selected) {
@@ -648,7 +726,9 @@ function handleConfigChange(): void {
 /**
  * Get API key from settings or prompt
  */
-async function getApiKey(context: vscode.ExtensionContext): Promise<string | undefined> {
+async function getApiKey(
+  context: vscode.ExtensionContext,
+): Promise<string | undefined> {
   const config = vscode.workspace.getConfiguration('ender');
   let apiKey = config.get<string>('apiKey');
 
@@ -662,14 +742,14 @@ async function getApiKey(context: vscode.ExtensionContext): Promise<string | und
     const action = await vscode.window.showWarningMessage(
       'Ender requires an Anthropic API key to function.',
       'Enter API Key',
-      'Later'
+      'Later',
     );
 
     if (action === 'Enter API Key') {
       apiKey = await vscode.window.showInputBox({
         prompt: 'Enter your Anthropic API key',
         password: true,
-        placeHolder: 'sk-ant-...'
+        placeHolder: 'sk-ant-...',
       });
 
       if (apiKey) {
@@ -685,17 +765,21 @@ async function getApiKey(context: vscode.ExtensionContext): Promise<string | und
  * Show welcome message
  */
 function showWelcomeMessage(): void {
-  vscode.window.showInformationMessage(
-    'Welcome to Ender! Your AI coding assistant is ready.',
-    'Open Chat',
-    'View Documentation'
-  ).then(selection => {
-    if (selection === 'Open Chat') {
-      vscode.commands.executeCommand('ender.openChat');
-    } else if (selection === 'View Documentation') {
-      vscode.env.openExternal(vscode.Uri.parse('https://github.com/ender-ai/ender-vscode'));
-    }
-  });
+  vscode.window
+    .showInformationMessage(
+      'Welcome to Ender! Your AI coding assistant is ready.',
+      'Open Chat',
+      'View Documentation',
+    )
+    .then((selection) => {
+      if (selection === 'Open Chat') {
+        vscode.commands.executeCommand('ender.openChat');
+      } else if (selection === 'View Documentation') {
+        vscode.env.openExternal(
+          vscode.Uri.parse('https://github.com/ender-ai/ender-vscode'),
+        );
+      }
+    });
 }
 
 /**
@@ -710,6 +794,10 @@ function generateSessionId(): string {
  */
 function initializeAgents(workspacePath: string): void {
   logger.info('Initializing agents', 'Extension', { workspacePath });
+
+  // Set workspace path for agents that need it
+  gitManagerAgent.setWorkspace(workspacePath);
+
   // Agents are initialized on-demand through the conductor
   // This function sets up any workspace-specific agent configuration
 }

@@ -4,8 +4,18 @@
  * environment-consistency, secrets-exposure-checker, docker-best-practices, cloud-config-validator
  */
 
-import { BaseValidator, ValidatorContext, containsPattern } from './base-validator';
-import type { ValidationIssue } from '../types';
+import { BaseValidator, ValidatorContext } from './base-validator';
+import type {
+  ValidationIssue,
+  HookRulesResult,
+  EventLeakResult,
+  ApiContractResult,
+  AuthFlowResult,
+  EnvironmentConsistencyResult,
+  SecretsExposureResult,
+  DockerBestPracticesResult,
+  CloudConfigResult,
+} from '../types';
 
 /**
  * Hook Rules Checker (Hooks Agent)
@@ -15,7 +25,40 @@ export class HookRulesCheckerValidator extends BaseValidator {
   readonly name = 'hook-rules-checker' as const;
   readonly stage = 'specialist' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<HookRulesResult> {
+    const baseResult = await super.run(context);
+    const violations: HookRulesResult['violations'] = baseResult.issues.map(
+      (issue) => ({
+        file: issue.file,
+        line: issue.line ?? 0,
+        hookName: this.extractHookName(issue.message),
+        rule: this.mapHookRule(issue.code ?? ''),
+        framework: 'react' as const,
+        message: issue.message,
+        suggestion: issue.suggestion ?? '',
+      }),
+    );
+    return { ...baseResult, violations };
+  }
+
+  private extractHookName(message: string): string {
+    const match = message.match(/use\w+/);
+    return match?.[0] ?? 'unknown';
+  }
+
+  private mapHookRule(
+    code: string,
+  ): 'conditional_hook' | 'loop_hook' | 'wrong_order' | 'missing_deps' | 'invalid_name' {
+    if (code.includes('CONDITIONAL')) return 'conditional_hook';
+    if (code.includes('LOOP')) return 'loop_hook';
+    if (code.includes('DEPS')) return 'missing_deps';
+    if (code.includes('NAME')) return 'invalid_name';
+    return 'wrong_order';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
@@ -28,25 +71,35 @@ export class HookRulesCheckerValidator extends BaseValidator {
     return issues;
   }
 
-  private checkReactHooks(content: string, filePath: string): ValidationIssue[] {
+  private checkReactHooks(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
-    // Check for hooks
-    const hookPattern = /\b(use[A-Z]\w*)\s*\(/g;
-    
+    // Hook pattern for detecting React hooks and extracting names
+    const hookRegex = /\b(use[A-Z]\w*)\s*\(/g;
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for hooks in conditions
-      if (/if\s*\([^)]*\)\s*{[^}]*use[A-Z]\w*\s*\(/.test(line) ||
-          (line.includes('if') && lines[i + 1]?.includes('use'))) {
-        issues.push(this.createIssue(
-          filePath,
-          `Hook may be called conditionally - hooks must be called unconditionally`,
-          'error',
-          { line: i + 1, code: 'HOOK_CONDITIONAL' }
-        ));
+      if (
+        /if\s*\([^)]*\)\s*{[^}]*use[A-Z]\w*\s*\(/.test(line) ||
+        (line.includes('if') && lines[i + 1]?.includes('use'))
+      ) {
+        const hookMatch = hookRegex.exec(line) ?? hookRegex.exec(lines[i + 1] ?? '');
+        hookRegex.lastIndex = 0; // Reset regex state
+        const hookName = hookMatch?.[1] ?? 'Hook';
+        issues.push(
+          this.createIssue(
+            filePath,
+            `${hookName} may be called conditionally - hooks must be called unconditionally`,
+            'error',
+            { line: i + 1, code: 'HOOK_CONDITIONAL' },
+          ),
+        );
       }
 
       // Check for hooks in loops
@@ -54,13 +107,18 @@ export class HookRulesCheckerValidator extends BaseValidator {
         // Check next few lines for hooks
         for (let j = i; j < Math.min(i + 10, lines.length); j++) {
           if (lines[j]?.includes('}')) break;
-          if (/use[A-Z]\w*\s*\(/.test(lines[j] ?? '')) {
-            issues.push(this.createIssue(
-              filePath,
-              `Hook called inside loop - hooks must not be in loops`,
-              'error',
-              { line: j + 1, code: 'HOOK_IN_LOOP' }
-            ));
+          const loopLine = lines[j] ?? '';
+          const hookMatch = hookRegex.exec(loopLine);
+          hookRegex.lastIndex = 0; // Reset regex state
+          if (hookMatch) {
+            issues.push(
+              this.createIssue(
+                filePath,
+                `${hookMatch[1]} called inside loop - hooks must not be in loops`,
+                'error',
+                { line: j + 1, code: 'HOOK_IN_LOOP' },
+              ),
+            );
           }
         }
       }
@@ -70,13 +128,19 @@ export class HookRulesCheckerValidator extends BaseValidator {
         for (let j = i + 1; j < lines.length; j++) {
           const nextLine = lines[j] ?? '';
           if (/^\s*}/.test(nextLine)) break;
-          if (/use[A-Z]\w*\s*\(/.test(nextLine) && !/^\s*\/\//.test(nextLine)) {
-            issues.push(this.createIssue(
-              filePath,
-              `Hook called after early return`,
-              'error',
-              { line: j + 1, code: 'HOOK_AFTER_RETURN' }
-            ));
+          if (!/^\s*\/\//.test(nextLine)) {
+            const hookMatch = hookRegex.exec(nextLine);
+            hookRegex.lastIndex = 0; // Reset regex state
+            if (hookMatch) {
+              issues.push(
+                this.createIssue(
+                  filePath,
+                  `${hookMatch[1]} called after early return`,
+                  'error',
+                  { line: j + 1, code: 'HOOK_AFTER_RETURN' },
+                ),
+              );
+            }
           }
         }
       }
@@ -95,12 +159,14 @@ export class HookRulesCheckerValidator extends BaseValidator {
           }
           if (bracketCount === 0) {
             if (!foundDeps) {
-              issues.push(this.createIssue(
-                filePath,
-                `useEffect may be missing dependency array`,
-                'warning',
-                { line: i + 1, code: 'HOOK_MISSING_DEPS' }
-              ));
+              issues.push(
+                this.createIssue(
+                  filePath,
+                  `useEffect may be missing dependency array`,
+                  'warning',
+                  { line: i + 1, code: 'HOOK_MISSING_DEPS' },
+                ),
+              );
             }
             break;
           }
@@ -108,12 +174,22 @@ export class HookRulesCheckerValidator extends BaseValidator {
       }
 
       // Check custom hook naming
-      if (/(?:const|function)\s+([a-z]\w*)\s*=?\s*(?:\([^)]*\)\s*=>|\()/.test(line)) {
+      if (
+        /(?:const|function)\s+([a-z]\w*)\s*=?\s*(?:\([^)]*\)\s*=>|\()/.test(
+          line,
+        )
+      ) {
         const match = line.match(/(?:const|function)\s+([a-z]\w*)/);
         const funcName = match?.[1];
         if (funcName && /use[A-Z]/.test(content.slice(content.indexOf(line)))) {
           // Function uses hooks but doesn't start with 'use'
-          if (funcName && !funcName.startsWith('use') && !['render', 'component'].some(k => funcName.toLowerCase().includes(k))) {
+          if (
+            funcName &&
+            !funcName.startsWith('use') &&
+            !['render', 'component'].some((k) =>
+              funcName.toLowerCase().includes(k),
+            )
+          ) {
             // Check if this function contains hook calls
             let funcContent = '';
             let braceCount = 0;
@@ -124,12 +200,14 @@ export class HookRulesCheckerValidator extends BaseValidator {
               if (braceCount === 0 && j > i) break;
             }
             if (/use[A-Z]\w*\s*\(/.test(funcContent)) {
-              issues.push(this.createIssue(
-                filePath,
-                `Function '${funcName}' uses hooks but name doesn't start with 'use'`,
-                'warning',
-                { line: i + 1, code: 'HOOK_INVALID_NAME' }
-              ));
+              issues.push(
+                this.createIssue(
+                  filePath,
+                  `Function '${funcName}' uses hooks but name doesn't start with 'use'`,
+                  'warning',
+                  { line: i + 1, code: 'HOOK_INVALID_NAME' },
+                ),
+              );
             }
           }
         }
@@ -148,7 +226,43 @@ export class EventLeakDetectorValidator extends BaseValidator {
   readonly name = 'event-leak-detector' as const;
   readonly stage = 'specialist' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<EventLeakResult> {
+    const baseResult = await super.run(context);
+    const leaks: EventLeakResult['leaks'] = baseResult.issues.map((issue) => ({
+      file: issue.file,
+      line: issue.line ?? 0,
+      eventType: this.mapEventType(issue.code ?? ''),
+      registrationCode: issue.message,
+      missingCleanup: this.getMissingCleanup(issue.code ?? ''),
+      severity: issue.severity === 'error' ? ('high' as const) : ('medium' as const),
+    }));
+    return { ...baseResult, leaks };
+  }
+
+  private mapEventType(
+    code: string,
+  ): 'dom_listener' | 'emitter_listener' | 'subscription' | 'interval' | 'timeout' {
+    if (code.includes('EVENT_LISTENER')) return 'dom_listener';
+    if (code.includes('EMITTER')) return 'emitter_listener';
+    if (code.includes('SUBSCRIPTION')) return 'subscription';
+    if (code.includes('INTERVAL')) return 'interval';
+    return 'timeout';
+  }
+
+  private getMissingCleanup(code: string): string {
+    const cleanups: Record<string, string> = {
+      LEAK_EVENT_LISTENER: 'removeEventListener()',
+      LEAK_EMITTER: '.off() or .removeListener()',
+      LEAK_SUBSCRIPTION: '.unsubscribe()',
+      LEAK_INTERVAL: 'clearInterval()',
+      LEAK_TIMEOUT: 'clearTimeout()',
+    };
+    return cleanups[code] ?? 'cleanup function';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
@@ -158,24 +272,29 @@ export class EventLeakDetectorValidator extends BaseValidator {
     return issues;
   }
 
-  private checkEventLeaks(content: string, filePath: string): ValidationIssue[] {
+  private checkEventLeaks(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     // Track addEventListener calls
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // DOM event listeners
       if (/addEventListener\s*\(/.test(line)) {
         const hasRemove = content.includes('removeEventListener');
         if (!hasRemove) {
-          issues.push(this.createIssue(
-            filePath,
-            `addEventListener without removeEventListener - potential memory leak`,
-            'warning',
-            { line: i + 1, code: 'LEAK_EVENT_LISTENER' }
-          ));
+          issues.push(
+            this.createIssue(
+              filePath,
+              `addEventListener without removeEventListener - potential memory leak`,
+              'warning',
+              { line: i + 1, code: 'LEAK_EVENT_LISTENER' },
+            ),
+          );
         }
       }
 
@@ -183,12 +302,14 @@ export class EventLeakDetectorValidator extends BaseValidator {
       if (/setInterval\s*\(/.test(line)) {
         const hasClear = content.includes('clearInterval');
         if (!hasClear) {
-          issues.push(this.createIssue(
-            filePath,
-            `setInterval without clearInterval - potential memory leak`,
-            'warning',
-            { line: i + 1, code: 'LEAK_INTERVAL' }
-          ));
+          issues.push(
+            this.createIssue(
+              filePath,
+              `setInterval without clearInterval - potential memory leak`,
+              'warning',
+              { line: i + 1, code: 'LEAK_INTERVAL' },
+            ),
+          );
         }
       }
 
@@ -197,39 +318,53 @@ export class EventLeakDetectorValidator extends BaseValidator {
         // Check if inside useEffect and has cleanup
         const prevLines = lines.slice(Math.max(0, i - 10), i).join('\n');
         if (/useEffect/.test(prevLines)) {
-          const nextLines = lines.slice(i, Math.min(lines.length, i + 20)).join('\n');
+          const nextLines = lines
+            .slice(i, Math.min(lines.length, i + 20))
+            .join('\n');
           if (!/clearTimeout/.test(nextLines)) {
-            issues.push(this.createIssue(
-              filePath,
-              `setTimeout in useEffect without clearTimeout in cleanup`,
-              'info',
-              { line: i + 1, code: 'LEAK_TIMEOUT' }
-            ));
+            issues.push(
+              this.createIssue(
+                filePath,
+                `setTimeout in useEffect without clearTimeout in cleanup`,
+                'info',
+                { line: i + 1, code: 'LEAK_TIMEOUT' },
+              ),
+            );
           }
         }
       }
 
       // EventEmitter listeners
       if (/\.on\s*\(\s*['"][^'"]+['"]/.test(line)) {
-        if (!content.includes('.off(') && !content.includes('.removeListener(')) {
-          issues.push(this.createIssue(
-            filePath,
-            `Event emitter .on() without .off() - potential memory leak`,
-            'warning',
-            { line: i + 1, code: 'LEAK_EMITTER' }
-          ));
+        if (
+          !content.includes('.off(') &&
+          !content.includes('.removeListener(')
+        ) {
+          issues.push(
+            this.createIssue(
+              filePath,
+              `Event emitter .on() without .off() - potential memory leak`,
+              'warning',
+              { line: i + 1, code: 'LEAK_EMITTER' },
+            ),
+          );
         }
       }
 
       // RxJS subscriptions
       if (/\.subscribe\s*\(/.test(line)) {
-        if (!content.includes('unsubscribe') && !content.includes('takeUntil')) {
-          issues.push(this.createIssue(
-            filePath,
-            `Observable subscription without unsubscribe - potential memory leak`,
-            'warning',
-            { line: i + 1, code: 'LEAK_SUBSCRIPTION' }
-          ));
+        if (
+          !content.includes('unsubscribe') &&
+          !content.includes('takeUntil')
+        ) {
+          issues.push(
+            this.createIssue(
+              filePath,
+              `Observable subscription without unsubscribe - potential memory leak`,
+              'warning',
+              { line: i + 1, code: 'LEAK_SUBSCRIPTION' },
+            ),
+          );
         }
       }
     }
@@ -246,7 +381,33 @@ export class ApiContractValidatorValidator extends BaseValidator {
   readonly name = 'api-contract-validator' as const;
   readonly stage = 'specialist' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<ApiContractResult> {
+    const baseResult = await super.run(context);
+    const violations: ApiContractResult['violations'] = baseResult.issues.map(
+      (issue) => ({
+        file: issue.file,
+        line: issue.line ?? 0,
+        apiName: 'HTTP API',
+        endpoint: '',
+        issue: this.mapApiIssue(issue.code ?? ''),
+        expected: 'proper error handling and authentication',
+        actual: issue.message,
+      }),
+    );
+    return { ...baseResult, violations };
+  }
+
+  private mapApiIssue(
+    code: string,
+  ): 'wrong_method' | 'missing_param' | 'wrong_type' | 'deprecated_endpoint' | 'missing_auth' {
+    if (code.includes('AUTH')) return 'missing_auth';
+    if (code.includes('NO_ERROR') || code.includes('NO_CATCH')) return 'wrong_method';
+    return 'missing_param';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
@@ -262,43 +423,63 @@ export class ApiContractValidatorValidator extends BaseValidator {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check fetch calls without error handling
       if (/fetch\s*\(/.test(line)) {
-        const context = lines.slice(i, Math.min(i + 10, lines.length)).join('\n');
-        if (!/.catch\s*\(/.test(context) && !/try\s*{/.test(lines.slice(Math.max(0, i - 5), i).join('\n'))) {
-          issues.push(this.createIssue(
-            filePath,
-            `fetch() call without error handling`,
-            'warning',
-            { line: i + 1, code: 'API_NO_ERROR_HANDLING' }
-          ));
+        const context = lines
+          .slice(i, Math.min(i + 10, lines.length))
+          .join('\n');
+        if (
+          !/.catch\s*\(/.test(context) &&
+          !/try\s*{/.test(lines.slice(Math.max(0, i - 5), i).join('\n'))
+        ) {
+          issues.push(
+            this.createIssue(
+              filePath,
+              `fetch() call without error handling`,
+              'warning',
+              { line: i + 1, code: 'API_NO_ERROR_HANDLING' },
+            ),
+          );
         }
       }
 
       // Check for missing authentication headers
       if (/fetch\s*\([^)]+\)/.test(line) && /api|endpoint/i.test(line)) {
-        const context = lines.slice(i, Math.min(i + 5, lines.length)).join('\n');
-        if (!/[Aa]uthorization|[Aa]uth|[Tt]oken|[Aa]pi[-_]?[Kk]ey/.test(context)) {
-          issues.push(this.createIssue(
-            filePath,
-            `API call may be missing authentication`,
-            'info',
-            { line: i + 1, code: 'API_MISSING_AUTH' }
-          ));
+        const context = lines
+          .slice(i, Math.min(i + 5, lines.length))
+          .join('\n');
+        if (
+          !/[Aa]uthorization|[Aa]uth|[Tt]oken|[Aa]pi[-_]?[Kk]ey/.test(context)
+        ) {
+          issues.push(
+            this.createIssue(
+              filePath,
+              `API call may be missing authentication`,
+              'info',
+              { line: i + 1, code: 'API_MISSING_AUTH' },
+            ),
+          );
         }
       }
 
       // Check axios without interceptors for error handling
       if (/axios\.\w+\s*\(/.test(line)) {
-        const context = lines.slice(i, Math.min(i + 10, lines.length)).join('\n');
-        if (!/.catch\s*\(/.test(context) && !/try\s*{/.test(lines.slice(Math.max(0, i - 5), i).join('\n'))) {
-          issues.push(this.createIssue(
-            filePath,
-            `axios call without error handling`,
-            'warning',
-            { line: i + 1, code: 'API_AXIOS_NO_CATCH' }
-          ));
+        const context = lines
+          .slice(i, Math.min(i + 10, lines.length))
+          .join('\n');
+        if (
+          !/.catch\s*\(/.test(context) &&
+          !/try\s*{/.test(lines.slice(Math.max(0, i - 5), i).join('\n'))
+        ) {
+          issues.push(
+            this.createIssue(
+              filePath,
+              `axios call without error handling`,
+              'warning',
+              { line: i + 1, code: 'API_AXIOS_NO_CATCH' },
+            ),
+          );
         }
       }
     }
@@ -315,63 +496,115 @@ export class AuthFlowValidatorValidator extends BaseValidator {
   readonly name = 'auth-flow-validator' as const;
   readonly stage = 'specialist' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<AuthFlowResult> {
+    const baseResult = await super.run(context);
+    const authIssues: AuthFlowResult['authIssues'] = baseResult.issues.map(
+      (issue) => ({
+        file: issue.file,
+        line: issue.line ?? 0,
+        flowType: 'jwt' as const,
+        issue: this.mapAuthIssue(issue.code ?? ''),
+        severity: this.mapAuthSeverity(issue.code ?? ''),
+        description: issue.message,
+        recommendation: issue.suggestion ?? 'Follow security best practices',
+      }),
+    );
+    return { ...baseResult, authIssues };
+  }
+
+  private mapAuthIssue(
+    code: string,
+  ): 'missing_refresh' | 'insecure_storage' | 'missing_validation' | 'exposed_token' | 'missing_logout' {
+    if (code.includes('STORAGE')) return 'insecure_storage';
+    if (code.includes('VALIDATION')) return 'missing_validation';
+    if (code.includes('URL')) return 'exposed_token';
+    if (code.includes('LOGOUT')) return 'missing_logout';
+    return 'missing_refresh';
+  }
+
+  private mapAuthSeverity(code: string): 'critical' | 'high' | 'medium' {
+    if (code.includes('URL') || code.includes('STORAGE')) return 'critical';
+    if (code.includes('VALIDATION')) return 'high';
+    return 'medium';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
-      if (!/auth|login|token|session/i.test(change.path + change.content)) continue;
+      if (!/auth|login|token|session/i.test(change.path + change.content))
+        continue;
       issues.push(...this.checkAuthPatterns(change.content, change.path));
     }
 
     return issues;
   }
 
-  private checkAuthPatterns(content: string, filePath: string): ValidationIssue[] {
+  private checkAuthPatterns(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for tokens in localStorage
       if (/localStorage\.\w+\s*\([^)]*(?:token|auth|jwt)/i.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Storing auth tokens in localStorage is vulnerable to XSS - consider httpOnly cookies`,
-          'warning',
-          { line: i + 1, code: 'AUTH_INSECURE_STORAGE' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Storing auth tokens in localStorage is vulnerable to XSS - consider httpOnly cookies`,
+            'warning',
+            { line: i + 1, code: 'AUTH_INSECURE_STORAGE' },
+          ),
+        );
       }
 
       // Check for missing token validation
-      if (/(?:jwt|token)\s*=/.test(line) && !/verify|decode|validate/i.test(content)) {
-        issues.push(this.createIssue(
-          filePath,
-          `JWT/token usage without apparent validation`,
-          'warning',
-          { line: i + 1, code: 'AUTH_NO_VALIDATION' }
-        ));
+      if (
+        /(?:jwt|token)\s*=/.test(line) &&
+        !/verify|decode|validate/i.test(content)
+      ) {
+        issues.push(
+          this.createIssue(
+            filePath,
+            `JWT/token usage without apparent validation`,
+            'warning',
+            { line: i + 1, code: 'AUTH_NO_VALIDATION' },
+          ),
+        );
       }
 
       // Check for exposed tokens in URLs
       if (/\?.*(?:token|api_key|auth)=/i.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Token exposed in URL query parameter - use headers instead`,
-          'error',
-          { line: i + 1, code: 'AUTH_TOKEN_IN_URL' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Token exposed in URL query parameter - use headers instead`,
+            'error',
+            { line: i + 1, code: 'AUTH_TOKEN_IN_URL' },
+          ),
+        );
       }
     }
 
     // Check for missing logout/session cleanup
-    if (/login|signIn|authenticate/i.test(content) && !/logout|signOut|clearSession/i.test(content)) {
-      issues.push(this.createIssue(
-        filePath,
-        `Auth implementation without logout/cleanup functionality`,
-        'info',
-        { code: 'AUTH_NO_LOGOUT' }
-      ));
+    if (
+      /login|signIn|authenticate/i.test(content) &&
+      !/logout|signOut|clearSession/i.test(content)
+    ) {
+      issues.push(
+        this.createIssue(
+          filePath,
+          `Auth implementation without logout/cleanup functionality`,
+          'info',
+          { code: 'AUTH_NO_LOGOUT' },
+        ),
+      );
     }
 
     return issues;
@@ -385,12 +618,32 @@ export class EnvironmentConsistencyValidator extends BaseValidator {
   readonly name = 'environment-consistency' as const;
   readonly stage = 'specialist' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<EnvironmentConsistencyResult> {
+    const baseResult = await super.run(context);
+    const envIssues: EnvironmentConsistencyResult['envIssues'] =
+      baseResult.issues.map((issue) => ({
+        variable: this.extractVarName(issue.message),
+        issue: 'missing_in_env' as const,
+        environments: ['development', 'production'],
+        usedInFiles: [issue.file],
+        suggestion: 'Define the variable in .env files',
+      }));
+    return { ...baseResult, envIssues };
+  }
+
+  private extractVarName(message: string): string {
+    const match = message.match(/'([^']+)'/);
+    return match?.[1] ?? 'UNKNOWN';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     // Collect all env var references
     const envVarUsage = new Map<string, string[]>();
-    
+
     for (const change of context.changes) {
       const vars = this.extractEnvVars(change.content);
       for (const v of vars) {
@@ -400,23 +653,25 @@ export class EnvironmentConsistencyValidator extends BaseValidator {
     }
 
     // Check .env files if present
-    const envFiles = context.changes.filter(c => c.path.includes('.env'));
+    const envFiles = context.changes.filter((c) => c.path.includes('.env'));
     const definedVars = new Set<string>();
-    
+
     for (const envFile of envFiles) {
       const vars = this.extractEnvDefinitions(envFile.content);
-      vars.forEach(v => definedVars.add(v));
+      vars.forEach((v) => definedVars.add(v));
     }
 
     // Report undefined env vars
     for (const [varName, files] of envVarUsage) {
       if (!definedVars.has(varName) && !this.isCommonEnvVar(varName)) {
-        issues.push(this.createIssue(
-          files[0] ?? '',
-          `Environment variable '${varName}' used but may not be defined`,
-          'warning',
-          { code: 'ENV_UNDEFINED_VAR' }
-        ));
+        issues.push(
+          this.createIssue(
+            files[0] ?? '',
+            `Environment variable '${varName}' used but may not be defined`,
+            'warning',
+            { code: 'ENV_UNDEFINED_VAR' },
+          ),
+        );
       }
     }
 
@@ -445,7 +700,15 @@ export class EnvironmentConsistencyValidator extends BaseValidator {
   }
 
   private isCommonEnvVar(name: string): boolean {
-    const common = ['NODE_ENV', 'PORT', 'HOST', 'DEBUG', 'HOME', 'PATH', 'USER'];
+    const common = [
+      'NODE_ENV',
+      'PORT',
+      'HOST',
+      'DEBUG',
+      'HOME',
+      'PATH',
+      'USER',
+    ];
     return common.includes(name);
   }
 }
@@ -458,7 +721,43 @@ export class SecretsExposureCheckerValidator extends BaseValidator {
   readonly stage = 'specialist' as const;
   protected severity = 'error' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<SecretsExposureResult> {
+    const baseResult = await super.run(context);
+    const exposures: SecretsExposureResult['exposures'] = baseResult.issues.map(
+      (issue) => ({
+        file: issue.file,
+        line: issue.line ?? 0,
+        type: this.mapExposureType(issue.code ?? ''),
+        secretType: this.mapSecretType(issue.message),
+        severity: 'critical' as const,
+        pattern: issue.message,
+        recommendation: 'Use environment variables or a secrets manager',
+      }),
+    );
+    return { ...baseResult, exposures };
+  }
+
+  private mapExposureType(
+    code: string,
+  ): 'hardcoded' | 'logged' | 'committed' | 'exposed_in_error' {
+    if (code.includes('LOGGED')) return 'logged';
+    if (code.includes('ERROR')) return 'exposed_in_error';
+    return 'hardcoded';
+  }
+
+  private mapSecretType(
+    message: string,
+  ): 'api_key' | 'password' | 'token' | 'private_key' | 'connection_string' {
+    const lower = message.toLowerCase();
+    if (lower.includes('password')) return 'password';
+    if (lower.includes('token')) return 'token';
+    if (lower.includes('key')) return 'api_key';
+    return 'api_key';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
@@ -468,44 +767,54 @@ export class SecretsExposureCheckerValidator extends BaseValidator {
     return issues;
   }
 
-  private checkSecretExposure(content: string, filePath: string): ValidationIssue[] {
+  private checkSecretExposure(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for logged secrets
       if (/console\.\w+\([^)]*(?:password|secret|token|key|auth)/i.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Possible secret being logged`,
-          'error',
-          { line: i + 1, code: 'SECRET_LOGGED' }
-        ));
+        issues.push(
+          this.createIssue(filePath, `Possible secret being logged`, 'error', {
+            line: i + 1,
+            code: 'SECRET_LOGGED',
+          }),
+        );
       }
 
       // Check for secrets in error messages
-      if (/(?:throw|Error)\s*\([^)]*(?:password|secret|token|apiKey)/i.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Possible secret in error message`,
-          'warning',
-          { line: i + 1, code: 'SECRET_IN_ERROR' }
-        ));
+      if (
+        /(?:throw|Error)\s*\([^)]*(?:password|secret|token|apiKey)/i.test(line)
+      ) {
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Possible secret in error message`,
+            'warning',
+            { line: i + 1, code: 'SECRET_IN_ERROR' },
+          ),
+        );
       }
 
       // High entropy strings (potential keys)
-      const highEntropyMatch = line.match(/['"]([A-Za-z0-9+/=]{32,})['"]/) ||
-                               line.match(/['"]([a-f0-9]{32,})['"]/) ||
-                               line.match(/['"](sk-[A-Za-z0-9]{32,})['"]/);
+      const highEntropyMatch =
+        line.match(/['"]([A-Za-z0-9+/=]{32,})['"]/) ||
+        line.match(/['"]([a-f0-9]{32,})['"]/) ||
+        line.match(/['"](sk-[A-Za-z0-9]{32,})['"]/);
       if (highEntropyMatch && !/process\.env|import\.meta\.env/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `High-entropy string detected - possible hardcoded secret`,
-          'warning',
-          { line: i + 1, code: 'SECRET_HIGH_ENTROPY' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `High-entropy string detected - possible hardcoded secret`,
+            'warning',
+            { line: i + 1, code: 'SECRET_HIGH_ENTROPY' },
+          ),
+        );
       }
     }
 
@@ -520,7 +829,39 @@ export class DockerBestPracticesValidator extends BaseValidator {
   readonly name = 'docker-best-practices' as const;
   readonly stage = 'specialist' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<DockerBestPracticesResult> {
+    const baseResult = await super.run(context);
+    const dockerIssues: DockerBestPracticesResult['dockerIssues'] =
+      baseResult.issues.map((issue) => ({
+        file: issue.file,
+        line: issue.line ?? 0,
+        rule: this.mapDockerRule(issue.code ?? ''),
+        severity: this.mapDockerSeverity(issue.code ?? ''),
+        description: issue.message,
+        recommendation: issue.suggestion ?? 'Follow Docker best practices',
+      }));
+    return { ...baseResult, dockerIssues };
+  }
+
+  private mapDockerRule(
+    code: string,
+  ): 'no_latest_tag' | 'missing_user' | 'secrets_in_build' | 'large_image' | 'no_healthcheck' {
+    if (code.includes('LATEST')) return 'no_latest_tag';
+    if (code.includes('ROOT') || code.includes('USER')) return 'missing_user';
+    if (code.includes('SECRET')) return 'secrets_in_build';
+    if (code.includes('HEALTHCHECK')) return 'no_healthcheck';
+    return 'large_image';
+  }
+
+  private mapDockerSeverity(code: string): 'high' | 'medium' | 'low' {
+    if (code.includes('SECRET')) return 'high';
+    if (code.includes('ROOT') || code.includes('LATEST')) return 'medium';
+    return 'low';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
@@ -531,52 +872,63 @@ export class DockerBestPracticesValidator extends BaseValidator {
     return issues;
   }
 
-  private checkDockerfile(content: string, filePath: string): ValidationIssue[] {
+  private checkDockerfile(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for :latest tag
       if (/FROM\s+\S+:latest/i.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Avoid :latest tag - use specific version for reproducibility`,
-          'warning',
-          { line: i + 1, code: 'DOCKER_LATEST_TAG' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Avoid :latest tag - use specific version for reproducibility`,
+            'warning',
+            { line: i + 1, code: 'DOCKER_LATEST_TAG' },
+          ),
+        );
       }
 
       // Check for running as root
       if (/FROM/i.test(line) && !content.includes('USER')) {
-        issues.push(this.createIssue(
-          filePath,
-          `Container runs as root - add USER instruction`,
-          'warning',
-          { code: 'DOCKER_ROOT_USER' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Container runs as root - add USER instruction`,
+            'warning',
+            { code: 'DOCKER_ROOT_USER' },
+          ),
+        );
       }
 
       // Check for secrets in build args
       if (/ARG\s+(?:PASSWORD|SECRET|TOKEN|KEY)/i.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Secrets in ARG are visible in image history`,
-          'error',
-          { line: i + 1, code: 'DOCKER_SECRET_ARG' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Secrets in ARG are visible in image history`,
+            'error',
+            { line: i + 1, code: 'DOCKER_SECRET_ARG' },
+          ),
+        );
       }
     }
 
     // Check for HEALTHCHECK
     if (!content.includes('HEALTHCHECK')) {
-      issues.push(this.createIssue(
-        filePath,
-        `No HEALTHCHECK instruction - consider adding for better orchestration`,
-        'info',
-        { code: 'DOCKER_NO_HEALTHCHECK' }
-      ));
+      issues.push(
+        this.createIssue(
+          filePath,
+          `No HEALTHCHECK instruction - consider adding for better orchestration`,
+          'info',
+          { code: 'DOCKER_NO_HEALTHCHECK' },
+        ),
+      );
     }
 
     return issues;
@@ -590,11 +942,46 @@ export class CloudConfigValidatorValidator extends BaseValidator {
   readonly name = 'cloud-config-validator' as const;
   readonly stage = 'specialist' as const;
 
-  protected async validate(context: ValidatorContext): Promise<ValidationIssue[]> {
+  async run(context: ValidatorContext): Promise<CloudConfigResult> {
+    const baseResult = await super.run(context);
+    const cloudIssues: CloudConfigResult['cloudIssues'] = baseResult.issues.map(
+      (issue) => ({
+        file: issue.file,
+        line: issue.line ?? 0,
+        provider: 'aws' as const,
+        resource: 'IAM',
+        issue: this.mapCloudIssue(issue.code ?? ''),
+        severity: this.mapCloudSeverity(issue.code ?? ''),
+        description: issue.message,
+        recommendation: issue.suggestion ?? 'Follow cloud security best practices',
+      }),
+    );
+    return { ...baseResult, cloudIssues };
+  }
+
+  private mapCloudIssue(
+    code: string,
+  ): 'overly_permissive' | 'missing_encryption' | 'public_access' | 'no_logging' | 'invalid_config' {
+    if (code.includes('ACTION') || code.includes('RESOURCE')) return 'overly_permissive';
+    if (code.includes('PUBLIC')) return 'public_access';
+    return 'invalid_config';
+  }
+
+  private mapCloudSeverity(code: string): 'critical' | 'high' | 'medium' {
+    if (code.includes('PUBLIC')) return 'critical';
+    if (code.includes('ACTION') || code.includes('RESOURCE')) return 'high';
+    return 'medium';
+  }
+
+  protected async validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
 
     for (const change of context.changes) {
-      if (/serverless\.ya?ml|vercel\.json|netlify\.toml|\.aws/i.test(change.path)) {
+      if (
+        /serverless\.ya?ml|vercel\.json|netlify\.toml|\.aws/i.test(change.path)
+      ) {
         issues.push(...this.checkCloudConfig(change.content, change.path));
       }
     }
@@ -602,40 +989,52 @@ export class CloudConfigValidatorValidator extends BaseValidator {
     return issues;
   }
 
-  private checkCloudConfig(content: string, filePath: string): ValidationIssue[] {
+  private checkCloudConfig(
+    content: string,
+    filePath: string,
+  ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      
+
       // Check for overly permissive policies
       if (/"Action"\s*:\s*"\*"/.test(line) || /Action:\s*['"]?\*/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Overly permissive action (*) - follow least privilege principle`,
-          'warning',
-          { line: i + 1, code: 'CLOUD_PERMISSIVE_ACTION' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Overly permissive action (*) - follow least privilege principle`,
+            'warning',
+            { line: i + 1, code: 'CLOUD_PERMISSIVE_ACTION' },
+          ),
+        );
       }
 
-      if (/"Resource"\s*:\s*"\*"/.test(line) || /Resource:\s*['"]?\*/.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Overly permissive resource (*) - scope to specific resources`,
-          'warning',
-          { line: i + 1, code: 'CLOUD_PERMISSIVE_RESOURCE' }
-        ));
+      if (
+        /"Resource"\s*:\s*"\*"/.test(line) ||
+        /Resource:\s*['"]?\*/.test(line)
+      ) {
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Overly permissive resource (*) - scope to specific resources`,
+            'warning',
+            { line: i + 1, code: 'CLOUD_PERMISSIVE_RESOURCE' },
+          ),
+        );
       }
 
       // Check for public access
       if (/public[_-]?access.*true|acl.*public/i.test(line)) {
-        issues.push(this.createIssue(
-          filePath,
-          `Public access enabled - ensure this is intentional`,
-          'warning',
-          { line: i + 1, code: 'CLOUD_PUBLIC_ACCESS' }
-        ));
+        issues.push(
+          this.createIssue(
+            filePath,
+            `Public access enabled - ensure this is intentional`,
+            'warning',
+            { line: i + 1, code: 'CLOUD_PUBLIC_ACCESS' },
+          ),
+        );
       }
     }
 

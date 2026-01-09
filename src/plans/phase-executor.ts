@@ -23,10 +23,10 @@ export class PhaseExecutor {
    */
   async executePhase(
     phase: PlanPhase,
-    taskExecutor: (task: PlanTask) => Promise<AgentResult>
+    taskExecutor: (task: PlanTask) => Promise<AgentResult>,
   ): Promise<PhaseExecutionResult> {
     logger.info(`Executing phase: ${phase.title}`, 'PhaseExecutor');
-    
+
     let tokensUsed = 0;
     const completedTasks: string[] = [];
     const failedTasks: string[] = [];
@@ -41,7 +41,7 @@ export class PhaseExecutor {
 
       try {
         const result = await taskExecutor(task);
-        tokensUsed += (result.tokensUsed.input + result.tokensUsed.output);
+        tokensUsed += result.tokensUsed.input + result.tokensUsed.output;
 
         if (result.success) {
           task.status = 'completed';
@@ -52,8 +52,10 @@ export class PhaseExecutor {
           task.status = 'failed';
           task.error = result.errors?.[0]?.message ?? 'Unknown error';
           failedTasks.push(task.id);
-          logger.error(`Task failed: ${task.description}`, 'PhaseExecutor', { error: task.error });
-          
+          logger.error(`Task failed: ${task.description}`, 'PhaseExecutor', {
+            error: task.error,
+          });
+
           // Stop phase on failure
           return {
             success: false,
@@ -61,22 +63,26 @@ export class PhaseExecutor {
             completedTasks,
             failedTasks,
             tokensUsed,
-            error: `Task failed: ${task.description}`
+            error: `Task failed: ${task.description}`,
           };
         }
       } catch (error) {
         task.status = 'failed';
         task.error = error instanceof Error ? error.message : String(error);
         failedTasks.push(task.id);
-        logger.error(`Task execution error: ${task.description}`, 'PhaseExecutor', { error });
-        
+        logger.error(
+          `Task execution error: ${task.description}`,
+          'PhaseExecutor',
+          { error },
+        );
+
         return {
           success: false,
           phaseId: phase.id,
           completedTasks,
           failedTasks,
           tokensUsed,
-          error: `Task execution error: ${task.error}`
+          error: `Task execution error: ${task.error}`,
         };
       }
     }
@@ -86,19 +92,25 @@ export class PhaseExecutor {
       phaseId: phase.id,
       completedTasks,
       failedTasks,
-      tokensUsed
+      tokensUsed,
     };
   }
 
   /**
    * Update task status manually
    */
-  updateTaskStatus(phase: PlanPhase, taskId: string, status: PlanTask['status'], error?: string): void {
-    const task = phase.tasks.find(t => t.id === taskId);
+  updateTaskStatus(
+    phase: PlanPhase,
+    taskId: string,
+    status: PlanTask['status'],
+    error?: string,
+  ): void {
+    const task = phase.tasks.find((t) => t.id === taskId);
     if (task) {
       task.status = status;
       if (status === 'completed') task.completedAt = new Date();
-      if (status === 'in_progress' && !task.startedAt) task.startedAt = new Date();
+      if (status === 'in_progress' && !task.startedAt)
+        task.startedAt = new Date();
       if (error) task.error = error;
     }
   }

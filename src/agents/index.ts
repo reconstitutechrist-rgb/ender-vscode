@@ -21,7 +21,10 @@ export { MemoryKeeperAgent, memoryKeeperAgent } from './memory-keeper';
 // Specialist agents
 export { HooksAgent, hooksAgent } from './hooks-agent';
 export { IntegrationsAgent, integrationsAgent } from './integrations-agent';
-export { InfrastructureAgent, infrastructureAgent } from './infrastructure-agent';
+export {
+  InfrastructureAgent,
+  infrastructureAgent,
+} from './infrastructure-agent';
 
 // Sanity checker
 export { SanityCheckerAgent, sanityCheckerAgent } from './sanity-checker';
@@ -46,20 +49,20 @@ import { sanityCheckerAgent } from './sanity-checker';
 import { BaseAgent } from './base-agent';
 
 export const agentRegistry: Record<AgentType, BaseAgent> = {
-  'conductor': conductorAgent,
-  'planner': plannerAgent,
-  'coder': coderAgent,
-  'reviewer': reviewerAgent,
-  'documenter': documenterAgent,
-  'researcher': researcherAgent,
-  'tester': testerAgent,
-  'debugger': debuggerAgent,
+  conductor: conductorAgent,
+  planner: plannerAgent,
+  coder: coderAgent,
+  reviewer: reviewerAgent,
+  documenter: documenterAgent,
+  researcher: researcherAgent,
+  tester: testerAgent,
+  debugger: debuggerAgent,
   'git-manager': gitManagerAgent,
   'memory-keeper': memoryKeeperAgent,
   'hooks-agent': hooksAgent,
   'integrations-agent': integrationsAgent,
   'infrastructure-agent': infrastructureAgent,
-  'sanity-checker': sanityCheckerAgent
+  'sanity-checker': sanityCheckerAgent,
 };
 
 /**

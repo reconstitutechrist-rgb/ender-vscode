@@ -6,14 +6,14 @@
 import { BaseAgent, AgentExecuteParams } from './base-agent';
 import { AnthropicClient } from '../api/anthropic-client';
 import { apiClient } from '../api';
-import { logger } from '../utils';
+import { generateId } from '../utils';
 import type {
   AgentConfig,
   AgentResult,
   AgentType,
   TaskType,
   ConductorDecision,
-  ContextBundle
+  ContextBundle,
 } from '../types';
 
 const CONDUCTOR_SYSTEM_PROMPT = `You are the Conductor agent for Ender, an AI coding assistant. Your role is to:
@@ -75,9 +75,9 @@ export class ConductorAgent extends BaseAgent {
         'scope_enforcement',
         'response_aggregation',
         'plan_lock_management',
-        'confidence_assessment'
+        'confidence_assessment',
       ],
-      maxTokens: 4096
+      maxTokens: 4096,
     };
     super(config, apiClient);
   }
@@ -102,17 +102,16 @@ export class ConductorAgent extends BaseAgent {
         system: systemPrompt,
         messages,
         maxTokens: this.maxTokens,
-        metadata: {
-          agent: this.type,
-          taskId: params.planId || 'direct',
-          planId: params.planId
-        }
+        metadata: this.buildMetadata(params.planId || generateId(), params.planId),
       });
 
       // Parse the routing decision
       const decision = this.parseRoutingDecision(response.content);
 
-      this.log('Routing decision made', decision);
+      // Determine task type for downstream agents
+      const taskType = this.determineTaskType(params.task, params.context);
+
+      this.log('Routing decision made', { ...decision, taskType });
 
       // If direct response is available
       if (decision.directResponse) {
@@ -120,7 +119,7 @@ export class ConductorAgent extends BaseAgent {
           confidence: 90,
           tokensUsed: response.usage,
           startTime,
-          explanation: decision.routingReason
+          explanation: decision.routingReason,
         });
       }
 
@@ -130,24 +129,23 @@ export class ConductorAgent extends BaseAgent {
           confidence: 50,
           tokensUsed: response.usage,
           startTime,
-          explanation: 'Clarification needed before proceeding'
+          explanation: 'Clarification needed before proceeding',
         });
       }
 
-      // Return routing decision for orchestrator to act on
-      return this.createSuccessResult(JSON.stringify(decision), {
+      // Return routing decision for orchestrator to act on (include taskType)
+      return this.createSuccessResult(JSON.stringify({ ...decision, taskType }), {
         confidence: this.calculateConfidence(decision),
         tokensUsed: response.usage,
         startTime,
         explanation: decision.routingReason,
-        nextAgent: decision.selectedAgents[0] as AgentType
+        nextAgent: decision.selectedAgents[0] as AgentType,
       });
-
     } catch (error) {
       this.log('Error in conductor', { error });
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
@@ -161,7 +159,7 @@ export class ConductorAgent extends BaseAgent {
   } {
     // Try to extract JSON from response
     const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/);
-    
+
     if (jsonMatch?.[1]) {
       try {
         const parsed = JSON.parse(jsonMatch[1]);
@@ -171,7 +169,7 @@ export class ConductorAgent extends BaseAgent {
           estimatedComplexity: parsed.estimatedComplexity || 'medium',
           requiresApproval: parsed.requiresApproval ?? true,
           directResponse: parsed.directResponse,
-          clarificationNeeded: parsed.clarificationNeeded
+          clarificationNeeded: parsed.clarificationNeeded,
         };
       } catch {
         // JSON parsing failed
@@ -194,24 +192,24 @@ export class ConductorAgent extends BaseAgent {
 
     // Detect agent mentions
     const agentKeywords: Record<AgentType, string[]> = {
-      'planner': ['plan', 'break down', 'phases', 'implementation plan'],
-      'coder': ['code', 'implement', 'write', 'modify', 'create file'],
-      'reviewer': ['review', 'validate', 'check', 'approve'],
-      'documenter': ['document', 'explain', 'comment'],
-      'researcher': ['research', 'look up', 'find documentation', 'how to'],
-      'tester': ['test', 'testing', 'coverage', 'unit test'],
-      'debugger': ['debug', 'error', 'bug', 'fix issue', 'trace'],
+      planner: ['plan', 'break down', 'phases', 'implementation plan'],
+      coder: ['code', 'implement', 'write', 'modify', 'create file'],
+      reviewer: ['review', 'validate', 'check', 'approve'],
+      documenter: ['document', 'explain', 'comment'],
+      researcher: ['research', 'look up', 'find documentation', 'how to'],
+      tester: ['test', 'testing', 'coverage', 'unit test'],
+      debugger: ['debug', 'error', 'bug', 'fix issue', 'trace'],
       'git-manager': ['commit', 'branch', 'merge', 'git'],
       'memory-keeper': ['remember', 'memory', 'learn', 'save'],
       'hooks-agent': ['hook', 'useEffect', 'lifecycle', 'middleware'],
       'integrations-agent': ['api', 'integration', 'webhook', 'oauth'],
       'infrastructure-agent': ['docker', 'deploy', 'environment', 'kubernetes'],
       'sanity-checker': ['verify', 'sanity', 'check assumption'],
-      'conductor': [] // Never route to self
+      conductor: [], // Never route to self
     };
 
     for (const [agent, keywords] of Object.entries(agentKeywords)) {
-      if (keywords.some(kw => lowerContent.includes(kw))) {
+      if (keywords.some((kw) => lowerContent.includes(kw))) {
         selectedAgents.push(agent as AgentType);
       }
     }
@@ -227,7 +225,7 @@ export class ConductorAgent extends BaseAgent {
           routingReason: 'Direct response - no agent routing needed',
           estimatedComplexity: 'low',
           requiresApproval: false,
-          directResponse: content
+          directResponse: content,
         };
       }
     }
@@ -235,13 +233,15 @@ export class ConductorAgent extends BaseAgent {
     // Determine complexity
     let complexity: 'low' | 'medium' | 'high' = 'medium';
     if (selectedAgents.length > 3) complexity = 'high';
-    if (selectedAgents.length === 1 && !selectedAgents.includes('planner')) complexity = 'low';
+    if (selectedAgents.length === 1 && !selectedAgents.includes('planner'))
+      complexity = 'low';
 
     return {
       selectedAgents,
       routingReason: `Inferred routing based on content analysis`,
       estimatedComplexity: complexity,
-      requiresApproval: complexity !== 'low' || selectedAgents.includes('coder')
+      requiresApproval:
+        complexity !== 'low' || selectedAgents.includes('coder'),
     };
   }
 
@@ -278,16 +278,30 @@ export class ConductorAgent extends BaseAgent {
     const lowerRequest = request.toLowerCase();
 
     // Check for specific patterns
-    if (lowerRequest.includes('refactor') && context.relevantFiles && context.relevantFiles.length > 3) {
+    if (
+      lowerRequest.includes('refactor') &&
+      context.relevantFiles &&
+      context.relevantFiles.length > 3
+    ) {
       return 'complex_refactoring';
     }
-    if (lowerRequest.includes('architecture') || lowerRequest.includes('design')) {
+    if (
+      lowerRequest.includes('architecture') ||
+      lowerRequest.includes('design')
+    ) {
       return 'architecture_decision';
     }
-    if (lowerRequest.includes('security') || lowerRequest.includes('vulnerability')) {
+    if (
+      lowerRequest.includes('security') ||
+      lowerRequest.includes('vulnerability')
+    ) {
       return 'security_scanning';
     }
-    if (lowerRequest.includes('debug') || lowerRequest.includes('fix') || lowerRequest.includes('error')) {
+    if (
+      lowerRequest.includes('debug') ||
+      lowerRequest.includes('fix') ||
+      lowerRequest.includes('error')
+    ) {
       return 'debugging';
     }
     if (lowerRequest.includes('test')) {
@@ -296,7 +310,10 @@ export class ConductorAgent extends BaseAgent {
     if (lowerRequest.includes('document') || lowerRequest.includes('explain')) {
       return 'documentation_generation';
     }
-    if (lowerRequest.match(/what|how|why|when|where/i) && request.length < 200) {
+    if (
+      lowerRequest.match(/what|how|why|when|where/i) &&
+      request.length < 200
+    ) {
       return 'simple_question';
     }
     if (lowerRequest.includes('hook') || lowerRequest.includes('useEffect')) {
@@ -322,7 +339,7 @@ export class ConductorAgent extends BaseAgent {
    */
   validatePlanScope(
     proposedFiles: string[],
-    context: ContextBundle
+    context: ContextBundle,
   ): { valid: boolean; violations: string[] } {
     if (!context.currentPlan) {
       return { valid: true, violations: [] };
@@ -339,8 +356,25 @@ export class ConductorAgent extends BaseAgent {
 
     return {
       valid: violations.length === 0,
-      violations
+      violations,
     };
+  }
+
+  /**
+   * Build metadata object for API calls
+   */
+  private buildMetadata(
+    taskId: string,
+    planId?: string,
+  ): { agent: AgentType; taskId: string; planId?: string } {
+    const meta: { agent: AgentType; taskId: string; planId?: string } = {
+      agent: this.type,
+      taskId,
+    };
+    if (planId) {
+      meta.planId = planId;
+    }
+    return meta;
   }
 }
 

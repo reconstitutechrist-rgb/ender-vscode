@@ -11,7 +11,7 @@ export class CompletionTracker {
    */
   async check(
     changes: FileChange[],
-    context: ContextBundle
+    context: ContextBundle,
   ): Promise<CompletionStatus> {
     const plan = context.currentPlan;
     if (!plan) {
@@ -20,13 +20,15 @@ export class CompletionTracker {
         totalTasks: 1,
         completed: changes.length > 0 ? 1 : 0,
         incomplete: changes.length === 0 ? ['Task execution'] : [],
-        blocked: []
+        blocked: [],
       };
     }
 
     const totalTasks = plan.phases.reduce((sum, p) => sum + p.tasks.length, 0);
-    const completedTasks = plan.phases.reduce((sum, p) => 
-      sum + p.tasks.filter(t => t.status === 'completed').length, 0);
+    const completedTasks = plan.phases.reduce(
+      (sum, p) => sum + p.tasks.filter((t) => t.status === 'completed').length,
+      0,
+    );
 
     const incomplete: string[] = [];
     const blocked: string[] = [];
@@ -34,7 +36,7 @@ export class CompletionTracker {
     // Analyze current phase
     const currentPhase = plan.phases[plan.currentPhaseIndex];
     if (currentPhase) {
-      currentPhase.tasks.forEach(t => {
+      currentPhase.tasks.forEach((t) => {
         if (t.status === 'pending' || t.status === 'in_progress') {
           incomplete.push(t.description);
         } else if (t.status === 'failed') {
@@ -45,14 +47,14 @@ export class CompletionTracker {
 
     // Add future phases
     for (let i = plan.currentPhaseIndex + 1; i < plan.phases.length; i++) {
-      plan.phases[i]?.tasks.forEach(t => incomplete.push(t.description));
+      plan.phases[i]?.tasks.forEach((t) => incomplete.push(t.description));
     }
 
     return {
       totalTasks,
       completed: completedTasks,
       incomplete,
-      blocked
+      blocked,
     };
   }
 }

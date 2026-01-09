@@ -7,14 +7,13 @@ import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
 import { logger, generateId } from '../utils';
-import type { 
-  MemoryEntry, 
-  MemoryCategory, 
+import type {
+  MemoryEntry,
+  MemoryCategory,
   MemoryStatus,
   Plan,
-  PlanPhase,
   UndoEntry,
-  FileSnapshot
+  FileSnapshot,
 } from '../types';
 
 export class SqliteClient {
@@ -183,7 +182,7 @@ export class SqliteClient {
    */
   insertMemoryEntry(entry: MemoryEntry): void {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare(`
       INSERT INTO memory_entries (
         id, timestamp, category, summary, detail, related_files,
@@ -212,7 +211,7 @@ export class SqliteClient {
       lastAccessed: entry.lastAccessed.toISOString(),
       accessCount: entry.accessCount,
       supersededBy: entry.supersededBy || null,
-      tier: entry.tier || 'warm'
+      tier: entry.tier || 'warm',
     });
   }
 
@@ -221,10 +220,10 @@ export class SqliteClient {
    */
   getMemoryEntry(id: string): MemoryEntry | null {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare('SELECT * FROM memory_entries WHERE id = ?');
     const row = stmt.get(id) as Record<string, unknown> | undefined;
-    
+
     return row ? this.rowToMemoryEntry(row) : null;
   }
 
@@ -239,12 +238,14 @@ export class SqliteClient {
     limit?: number;
   }): MemoryEntry[] {
     const db = this.ensureDb();
-    
+
     let sql = 'SELECT * FROM memory_entries WHERE 1=1';
     const params: Record<string, unknown> = {};
 
     if (options.categories && options.categories.length > 0) {
-      const placeholders = options.categories.map((_, i) => `@cat${i}`).join(', ');
+      const placeholders = options.categories
+        .map((_, i) => `@cat${i}`)
+        .join(', ');
       sql += ` AND category IN (${placeholders})`;
       options.categories.forEach((cat, i) => {
         params[`cat${i}`] = cat;
@@ -275,8 +276,8 @@ export class SqliteClient {
 
     const stmt = db.prepare(sql);
     const rows = stmt.all(params) as Record<string, unknown>[];
-    
-    return rows.map(row => this.rowToMemoryEntry(row));
+
+    return rows.map((row) => this.rowToMemoryEntry(row));
   }
 
   /**
@@ -284,7 +285,7 @@ export class SqliteClient {
    */
   updateMemoryEntry(id: string, updates: Partial<MemoryEntry>): void {
     const db = this.ensureDb();
-    
+
     const setClauses: string[] = ['updated_at = CURRENT_TIMESTAMP'];
     const params: Record<string, unknown> = { id };
 
@@ -344,24 +345,29 @@ export class SqliteClient {
    * Convert database row to MemoryEntry
    */
   private rowToMemoryEntry(row: Record<string, unknown>): MemoryEntry {
-    return {
+    const entry: MemoryEntry = {
       id: row.id as string,
       timestamp: new Date(row.timestamp as string),
       category: row.category as MemoryCategory,
       summary: row.summary as string,
       detail: row.detail as string,
-      relatedFiles: JSON.parse(row.related_files as string || '[]'),
-      planId: row.plan_id as string | undefined,
+      relatedFiles: JSON.parse((row.related_files as string) || '[]'),
       confidence: row.confidence as number,
       source: row.source as 'auto' | 'user',
-      tags: JSON.parse(row.tags as string || '[]'),
+      tags: JSON.parse((row.tags as string) || '[]'),
       status: row.status as MemoryStatus,
       pinned: Boolean(row.pinned),
       lastAccessed: new Date(row.last_accessed as string),
       accessCount: row.access_count as number,
-      supersededBy: row.superseded_by as string | undefined,
-      tier: row.tier as 'hot' | 'warm' | 'cold'
+      tier: row.tier as 'hot' | 'warm' | 'cold',
     };
+    if (row.plan_id) {
+      entry.planId = row.plan_id as string;
+    }
+    if (row.superseded_by) {
+      entry.supersededBy = row.superseded_by as string;
+    }
+    return entry;
   }
 
   // =====================
@@ -373,7 +379,7 @@ export class SqliteClient {
    */
   insertPlan(plan: Plan): void {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare(`
       INSERT INTO plans (
         id, title, description, status, phases, current_phase_index,
@@ -401,7 +407,7 @@ export class SqliteClient {
       createdAt: plan.createdAt.toISOString(),
       approvedAt: plan.approvedAt?.toISOString() || null,
       completedAt: plan.completedAt?.toISOString() || null,
-      lockedAt: plan.lockedAt?.toISOString() || null
+      lockedAt: plan.lockedAt?.toISOString() || null,
     });
   }
 
@@ -410,10 +416,10 @@ export class SqliteClient {
    */
   getPlan(id: string): Plan | null {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare('SELECT * FROM plans WHERE id = ?');
     const row = stmt.get(id) as Record<string, unknown> | undefined;
-    
+
     return row ? this.rowToPlan(row) : null;
   }
 
@@ -422,7 +428,7 @@ export class SqliteClient {
    */
   updatePlan(id: string, updates: Partial<Plan>): void {
     const db = this.ensureDb();
-    
+
     const setClauses: string[] = [];
     const params: Record<string, unknown> = { id };
 
@@ -466,23 +472,31 @@ export class SqliteClient {
    * Convert row to Plan
    */
   private rowToPlan(row: Record<string, unknown>): Plan {
-    return {
+    const plan: Plan = {
       id: row.id as string,
       title: row.title as string,
       description: row.description as string,
       status: row.status as Plan['status'],
-      phases: JSON.parse(row.phases as string || '[]'),
+      phases: JSON.parse((row.phases as string) || '[]'),
       currentPhaseIndex: row.current_phase_index as number,
-      estimatedComplexity: row.estimated_complexity as Plan['estimatedComplexity'],
+      estimatedComplexity:
+        row.estimated_complexity as Plan['estimatedComplexity'],
       estimatedTokens: row.estimated_tokens as number,
       actualTokensUsed: row.actual_tokens_used as number,
-      affectedFiles: JSON.parse(row.affected_files as string || '[]'),
+      affectedFiles: JSON.parse((row.affected_files as string) || '[]'),
       createdAt: new Date(row.created_at as string),
-      approvedAt: row.approved_at ? new Date(row.approved_at as string) : undefined,
-      completedAt: row.completed_at ? new Date(row.completed_at as string) : undefined,
-      lockedAt: row.locked_at ? new Date(row.locked_at as string) : undefined,
-      metadata: JSON.parse(row.metadata as string || '{}')
+      metadata: JSON.parse((row.metadata as string) || '{}'),
     };
+    if (row.approved_at) {
+      plan.approvedAt = new Date(row.approved_at as string);
+    }
+    if (row.completed_at) {
+      plan.completedAt = new Date(row.completed_at as string);
+    }
+    if (row.locked_at) {
+      plan.lockedAt = new Date(row.locked_at as string);
+    }
+    return plan;
   }
 
   // =====================
@@ -494,7 +508,7 @@ export class SqliteClient {
    */
   pushUndo(entry: UndoEntry): void {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare(`
       INSERT INTO undo_stack (
         id, sequence, action_type, files_before, files_after,
@@ -513,7 +527,7 @@ export class SqliteClient {
       filesAfter: JSON.stringify(entry.filesAfter),
       description: entry.description,
       planId: entry.planId || null,
-      phaseId: entry.phaseId || null
+      phaseId: entry.phaseId || null,
     });
   }
 
@@ -522,25 +536,32 @@ export class SqliteClient {
    */
   getUndoStack(limit = 10): UndoEntry[] {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare(`
-      SELECT * FROM undo_stack 
-      ORDER BY sequence DESC 
+      SELECT * FROM undo_stack
+      ORDER BY sequence DESC
       LIMIT ?
     `);
-    
+
     const rows = stmt.all(limit) as Record<string, unknown>[];
-    return rows.map(row => ({
-      id: row.id as string,
-      sequence: row.sequence as number,
-      actionType: row.action_type as string,
-      filesBefore: JSON.parse(row.files_before as string || '[]'),
-      filesAfter: JSON.parse(row.files_after as string || '[]'),
-      description: row.description as string,
-      createdAt: new Date(row.created_at as string),
-      planId: row.plan_id as string | undefined,
-      phaseId: row.phase_id as string | undefined
-    }));
+    return rows.map((row) => {
+      const entry: UndoEntry = {
+        id: row.id as string,
+        sequence: row.sequence as number,
+        actionType: row.action_type as string,
+        filesBefore: JSON.parse((row.files_before as string) || '[]'),
+        filesAfter: JSON.parse((row.files_after as string) || '[]'),
+        description: row.description as string,
+        createdAt: new Date(row.created_at as string),
+      };
+      if (row.plan_id) {
+        entry.planId = row.plan_id as string;
+      }
+      if (row.phase_id) {
+        entry.phaseId = row.phase_id as string;
+      }
+      return entry;
+    });
   }
 
   /**
@@ -548,13 +569,13 @@ export class SqliteClient {
    */
   popUndo(): UndoEntry | null {
     const db = this.ensureDb();
-    
+
     const entry = this.getUndoStack(1)[0];
     if (!entry) return null;
 
     const stmt = db.prepare('DELETE FROM undo_stack WHERE id = ?');
     stmt.run(entry.id);
-    
+
     return entry;
   }
 
@@ -563,10 +584,10 @@ export class SqliteClient {
    */
   getNextUndoSequence(): number {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare('SELECT MAX(sequence) as max_seq FROM undo_stack');
     const row = stmt.get() as { max_seq: number | null };
-    
+
     return (row.max_seq ?? 0) + 1;
   }
 
@@ -575,12 +596,12 @@ export class SqliteClient {
    */
   trimUndoStack(maxLevels: number): number {
     const db = this.ensureDb();
-    
+
     const countStmt = db.prepare('SELECT COUNT(*) as count FROM undo_stack');
     const { count } = countStmt.get() as { count: number };
-    
+
     if (count <= maxLevels) return 0;
-    
+
     const toDelete = count - maxLevels;
     const deleteStmt = db.prepare(`
       DELETE FROM undo_stack 
@@ -590,7 +611,7 @@ export class SqliteClient {
         LIMIT ?
       )
     `);
-    
+
     deleteStmt.run(toDelete);
     return toDelete;
   }
@@ -611,7 +632,7 @@ export class SqliteClient {
     description?: string;
   }): void {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare(`
       INSERT INTO checkpoints (id, timestamp, type, files, plan_id, phase_id, description)
       VALUES (@id, @timestamp, @type, @files, @planId, @phaseId, @description)
@@ -624,7 +645,7 @@ export class SqliteClient {
       files: JSON.stringify(checkpoint.files),
       planId: checkpoint.planId || null,
       phaseId: checkpoint.phaseId || null,
-      description: checkpoint.description || null
+      description: checkpoint.description || null,
     });
   }
 
@@ -641,21 +662,36 @@ export class SqliteClient {
     description?: string;
   } | null {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare('SELECT * FROM checkpoints WHERE id = ?');
     const row = stmt.get(id) as Record<string, unknown> | undefined;
-    
+
     if (!row) return null;
-    
-    return {
+
+    const checkpoint: {
+      id: string;
+      timestamp: Date;
+      type: string;
+      files: FileSnapshot[];
+      planId?: string;
+      phaseId?: string;
+      description?: string;
+    } = {
       id: row.id as string,
       timestamp: new Date(row.timestamp as string),
       type: row.type as string,
-      files: JSON.parse(row.files as string || '[]'),
-      planId: row.plan_id as string | undefined,
-      phaseId: row.phase_id as string | undefined,
-      description: row.description as string | undefined
+      files: JSON.parse((row.files as string) || '[]'),
     };
+    if (row.plan_id) {
+      checkpoint.planId = row.plan_id as string;
+    }
+    if (row.phase_id) {
+      checkpoint.phaseId = row.phase_id as string;
+    }
+    if (row.description) {
+      checkpoint.description = row.description as string;
+    }
+    return checkpoint;
   }
 
   // =====================
@@ -674,7 +710,7 @@ export class SqliteClient {
     taskType?: string;
   }): void {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare(`
       INSERT INTO usage_logs (id, model, input_tokens, output_tokens, cost, agent, task_type)
       VALUES (@id, @model, @inputTokens, @outputTokens, @cost, @agent, @taskType)
@@ -687,41 +723,45 @@ export class SqliteClient {
       outputTokens: usage.outputTokens,
       cost: usage.cost,
       agent: usage.agent || null,
-      taskType: usage.taskType || null
+      taskType: usage.taskType || null,
     });
   }
 
   /**
    * Get usage stats for date range
    */
-  getUsageStats(startDate: Date, endDate: Date): {
+  getUsageStats(
+    startDate: Date,
+    endDate: Date,
+  ): {
     totalCost: number;
     totalTokens: number;
     byModel: Record<string, { cost: number; tokens: number }>;
     byAgent: Record<string, { cost: number; tokens: number }>;
   } {
     const db = this.ensureDb();
-    
+
     const stmt = db.prepare(`
       SELECT * FROM usage_logs 
       WHERE created_at BETWEEN ? AND ?
     `);
-    
+
     const rows = stmt.all(
       startDate.toISOString(),
-      endDate.toISOString()
+      endDate.toISOString(),
     ) as Record<string, unknown>[];
 
     const stats = {
       totalCost: 0,
       totalTokens: 0,
       byModel: {} as Record<string, { cost: number; tokens: number }>,
-      byAgent: {} as Record<string, { cost: number; tokens: number }>
+      byAgent: {} as Record<string, { cost: number; tokens: number }>,
     };
 
     for (const row of rows) {
       const cost = row.cost as number;
-      const tokens = (row.input_tokens as number) + (row.output_tokens as number);
+      const tokens =
+        (row.input_tokens as number) + (row.output_tokens as number);
       const model = row.model as string;
       const agent = row.agent as string | null;
 
@@ -826,11 +866,23 @@ export class SqliteClient {
     pinnedOnly?: boolean;
     tier?: string;
   }): MemoryEntry[] {
-    return this.getMemoryEntries({
-      categories: options.categories,
-      pinned: options.pinnedOnly,
-      tier: options.tier
-    });
+    const filterOptions: {
+      categories?: MemoryCategory[];
+      status?: MemoryStatus;
+      pinned?: boolean;
+      tier?: string;
+      limit?: number;
+    } = {};
+    if (options.categories) {
+      filterOptions.categories = options.categories;
+    }
+    if (options.pinnedOnly !== undefined) {
+      filterOptions.pinned = options.pinnedOnly;
+    }
+    if (options.tier) {
+      filterOptions.tier = options.tier;
+    }
+    return this.getMemoryEntries(filterOptions);
   }
 
   /**
@@ -839,36 +891,82 @@ export class SqliteClient {
   getMemoryStats(): import('../types').MemoryStats {
     const db = this.ensureDb();
 
-    const totalStmt = db.prepare('SELECT COUNT(*) as count FROM memory_entries');
+    const totalStmt = db.prepare(
+      'SELECT COUNT(*) as count FROM memory_entries',
+    );
     const { count: totalEntries } = totalStmt.get() as { count: number };
 
-    const pinnedStmt = db.prepare('SELECT COUNT(*) as count FROM memory_entries WHERE pinned = 1');
+    const pinnedStmt = db.prepare(
+      'SELECT COUNT(*) as count FROM memory_entries WHERE pinned = 1',
+    );
     const { count: pinnedCount } = pinnedStmt.get() as { count: number };
 
-    const pendingStmt = db.prepare('SELECT COUNT(*) as count FROM memory_entries WHERE status = ?');
-    const { count: pendingCount } = pendingStmt.get('pending') as { count: number };
+    const avgAccessStmt = db.prepare(
+      'SELECT AVG(access_count) as avg FROM memory_entries',
+    );
+    const { avg: averageAccessCount } = avgAccessStmt.get() as {
+      avg: number | null;
+    };
 
-    const categoryStmt = db.prepare('SELECT category, COUNT(*) as count FROM memory_entries GROUP BY category');
-    const categoryRows = categoryStmt.all() as Array<{ category: string; count: number }>;
-    const byCategory: Record<string, number> = {};
+    const categoryStmt = db.prepare(
+      'SELECT category, COUNT(*) as count FROM memory_entries GROUP BY category',
+    );
+    const categoryRows = categoryStmt.all() as Array<{
+      category: string;
+      count: number;
+    }>;
+    const byCategory = {} as Record<import('../types').MemoryCategory, number>;
     for (const row of categoryRows) {
-      byCategory[row.category] = row.count;
+      byCategory[row.category as import('../types').MemoryCategory] = row.count;
     }
 
-    const tierStmt = db.prepare('SELECT tier, COUNT(*) as count FROM memory_entries GROUP BY tier');
-    const tierRows = tierStmt.all() as Array<{ tier: string; count: number }>;
-    const byTier: Record<string, number> = {};
-    for (const row of tierRows) {
-      byTier[row.tier] = row.count;
+    const statusStmt = db.prepare(
+      'SELECT status, COUNT(*) as count FROM memory_entries GROUP BY status',
+    );
+    const statusRows = statusStmt.all() as Array<{
+      status: string;
+      count: number;
+    }>;
+    const byStatus = {} as Record<import('../types').MemoryStatus, number>;
+    for (const row of statusRows) {
+      byStatus[row.status as import('../types').MemoryStatus] = row.count;
     }
+
+    const tierStmt = db.prepare(
+      'SELECT tier, COUNT(*) as count FROM memory_entries GROUP BY tier',
+    );
+    const tierRows = tierStmt.all() as Array<{ tier: string; count: number }>;
+    const byTier = {} as Record<import('../types').MemoryTier, number>;
+    for (const row of tierRows) {
+      byTier[row.tier as import('../types').MemoryTier] = row.count;
+    }
+
+    const datesStmt = db.prepare(
+      'SELECT MIN(timestamp) as oldest, MAX(timestamp) as newest FROM memory_entries',
+    );
+    const { oldest, newest } = datesStmt.get() as {
+      oldest: string | null;
+      newest: string | null;
+    };
+
+    // Estimate total tokens (rough: summary + detail chars / 4)
+    const tokensStmt = db.prepare(
+      'SELECT SUM(LENGTH(summary) + LENGTH(detail)) / 4 as tokens FROM memory_entries',
+    );
+    const { tokens: totalTokens } = tokensStmt.get() as {
+      tokens: number | null;
+    };
 
     return {
       totalEntries,
       byCategory,
+      byStatus,
       byTier,
       pinnedCount,
-      pendingCount,
-      lastUpdated: new Date()
+      averageAccessCount: averageAccessCount ?? 0,
+      oldestEntry: oldest ? new Date(oldest) : new Date(),
+      newestEntry: newest ? new Date(newest) : new Date(),
+      totalTokens: totalTokens ?? 0,
     };
   }
 }

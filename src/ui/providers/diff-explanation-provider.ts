@@ -4,7 +4,19 @@
  */
 
 import * as vscode from 'vscode';
-import type { FileChange, DiffExplanation, DiffChangeExplanation } from '../../types';
+import type { FileChange, DiffExplanation } from '../../types';
+
+// Helper function for HTML escaping
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  };
+  return text.replace(/[&<>"']/g, (m) => map[m] || m);
+}
 
 export class DiffExplanationProvider {
   /**
@@ -12,13 +24,13 @@ export class DiffExplanationProvider {
    */
   static async showExplanation(
     changes: FileChange[],
-    explanations: DiffExplanation[]
+    explanations: DiffExplanation[],
   ): Promise<void> {
     const panel = vscode.window.createWebviewPanel(
       'enderDiffExplanation',
       'Change Explanation',
       vscode.ViewColumn.Two,
-      { enableScripts: true }
+      { enableScripts: true },
     );
 
     panel.webview.html = DiffExplanationProvider.getHtml(changes, explanations);
@@ -47,10 +59,16 @@ export class DiffExplanationProvider {
    */
   private static getHtml(
     changes: FileChange[],
-    explanations: DiffExplanation[]
+    explanations: DiffExplanation[],
   ): string {
-    const totalAdditions = explanations.reduce((sum, e) => sum + e.summary.totalAdditions, 0);
-    const totalDeletions = explanations.reduce((sum, e) => sum + e.summary.totalDeletions, 0);
+    const totalAdditions = explanations.reduce(
+      (sum, e) => sum + e.summary.totalAdditions,
+      0,
+    );
+    const totalDeletions = explanations.reduce(
+      (sum, e) => sum + e.summary.totalDeletions,
+      0,
+    );
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -195,7 +213,9 @@ export class DiffExplanationProvider {
     </div>
   </div>
 
-  ${explanations.map(exp => `
+  ${explanations
+    .map(
+      (exp) => `
     <div class="file-section">
       <div class="file-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
         <span class="file-name">${escapeHtml(exp.file)}</span>
@@ -206,7 +226,9 @@ export class DiffExplanationProvider {
         </span>
       </div>
       <div class="file-content">
-        ${exp.changes.map(change => `
+        ${exp.changes
+          .map(
+            (change) => `
           <div class="change-item">
             <div class="change-header">
               <span class="change-type ${change.type}">${change.type}</span>
@@ -225,11 +247,15 @@ export class DiffExplanationProvider {
               ${change.dependencies.length > 0 ? `<br><strong>Affects:</strong> ${change.dependencies.join(', ')}` : ''}
             </div>
           </div>
-        `).join('')}
+        `,
+          )
+          .join('')}
         <button onclick="viewDiff('${escapeHtml(exp.file)}')">View Full Diff</button>
       </div>
     </div>
-  `).join('')}
+  `,
+    )
+    .join('')}
 
   <script>
     const vscode = acquireVsCodeApi();

@@ -96,22 +96,22 @@ export interface SanityCheckResult {
   passed: boolean;
   timestamp: Date;
   duration: number;
-  
+
   hallucinations: {
     checked: number;
     found: HallucinationCheck[];
   };
-  
+
   instructionCompliance: InstructionComplianceReport;
-  
+
   requestAlignment: RequestAlignmentCheck;
-  
+
   assumptions: AssumptionLog;
-  
+
   completion: CompletionTracker;
-  
+
   confidence: ConfidenceCalibration;
-  
+
   summary: string;
   recommendations: string[];
 }
@@ -173,7 +173,9 @@ export interface DestructiveOperationConfirmation {
 
 export interface AutoRollbackConfig {
   enabled: boolean;
-  triggers: Array<'test_failure' | 'type_error' | 'lint_error' | 'runtime_error'>;
+  triggers: Array<
+    'test_failure' | 'type_error' | 'lint_error' | 'runtime_error'
+  >;
   behavior: 'rollback_immediately' | 'ask_user' | 'rollback_and_notify';
   preserveAttempt: boolean;
 }

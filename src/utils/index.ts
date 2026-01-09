@@ -26,7 +26,7 @@ export function generateShortId(): string {
  * Sleep for specified milliseconds
  */
 export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -39,13 +39,13 @@ export async function retry<T>(
     initialDelay?: number;
     maxDelay?: number;
     shouldRetry?: (error: unknown) => boolean;
-  } = {}
+  } = {},
 ): Promise<T> {
   const {
     maxRetries = 3,
     initialDelay = 1000,
     maxDelay = 30000,
-    shouldRetry = () => true
+    shouldRetry = () => true,
   } = options;
 
   let lastError: unknown;
@@ -56,7 +56,7 @@ export async function retry<T>(
       return await fn();
     } catch (error) {
       lastError = error;
-      
+
       if (attempt === maxRetries || !shouldRetry(error)) {
         throw error;
       }
@@ -74,7 +74,7 @@ export async function retry<T>(
  */
 export function debounce<T extends (...args: unknown[]) => unknown>(
   fn: T,
-  delay: number
+  delay: number,
 ): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
 
@@ -91,7 +91,7 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
  */
 export function throttle<T extends (...args: unknown[]) => unknown>(
   fn: T,
-  limit: number
+  limit: number,
 ): (...args: Parameters<T>) => void {
   let inThrottle = false;
 
@@ -117,7 +117,7 @@ export function deepClone<T>(obj: T): T {
 export function getNestedValue<T>(
   obj: Record<string, unknown>,
   path: string,
-  defaultValue?: T
+  defaultValue?: T,
 ): T | undefined {
   const keys = path.split('.');
   let current: unknown = obj;
@@ -149,7 +149,8 @@ export function formatBytes(bytes: number): string {
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+  if (ms < 3600000)
+    return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
   return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
 }
 
@@ -170,9 +171,9 @@ export function escapeHtml(str: string): string {
     '<': '&lt;',
     '>': '&gt;',
     '"': '&quot;',
-    "'": '&#39;'
+    "'": '&#39;',
   };
-  return str.replace(/[&<>"']/g, char => entities[char] ?? char);
+  return str.replace(/[&<>"']/g, (char) => entities[char] ?? char);
 }
 
 /**
@@ -189,15 +190,21 @@ export function isEmpty(value: unknown): boolean {
 /**
  * Group array by key
  */
-export function groupBy<T>(array: T[], keyFn: (item: T) => string): Record<string, T[]> {
-  return array.reduce((groups, item) => {
-    const key = keyFn(item);
-    if (!groups[key]) {
-      groups[key] = [];
-    }
-    groups[key].push(item);
-    return groups;
-  }, {} as Record<string, T[]>);
+export function groupBy<T>(
+  array: T[],
+  keyFn: (item: T) => string,
+): Record<string, T[]> {
+  return array.reduce(
+    (groups, item) => {
+      const key = keyFn(item);
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(item);
+      return groups;
+    },
+    {} as Record<string, T[]>,
+  );
 }
 
 /**

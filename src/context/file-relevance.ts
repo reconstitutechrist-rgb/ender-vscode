@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { logger } from '../utils';
+// Logger is available but currently unused in favor of simple implementation
 import type { FileContent, Plan, ConversationMessage } from '../types';
 
 export interface RelevanceScore {
@@ -25,10 +25,7 @@ export class FileRelevanceScorer {
   /**
    * Score files by relevance to context
    */
-  scoreFiles(
-    files: FileContent[],
-    context: ScoringContext
-  ): RelevanceScore[] {
+  scoreFiles(files: FileContent[], context: ScoringContext): RelevanceScore[] {
     const scores: RelevanceScore[] = [];
 
     for (const file of files) {
@@ -46,18 +43,21 @@ export class FileRelevanceScorer {
   getMostRelevant(
     files: FileContent[],
     context: ScoringContext,
-    limit: number = 10
+    limit: number = 10,
   ): FileContent[] {
     const scores = this.scoreFiles(files, context);
-    const topPaths = scores.slice(0, limit).map(s => s.path);
-    
-    return files.filter(f => topPaths.includes(f.path));
+    const topPaths = scores.slice(0, limit).map((s) => s.path);
+
+    return files.filter((f) => topPaths.includes(f.path));
   }
 
   /**
    * Score a single file
    */
-  private scoreFile(file: FileContent, context: ScoringContext): RelevanceScore {
+  private scoreFile(
+    file: FileContent,
+    context: ScoringContext,
+  ): RelevanceScore {
     let score = 0;
     const reasons: string[] = [];
 
@@ -79,7 +79,10 @@ export class FileRelevanceScorer {
 
     // Check recent conversation relevance
     if (context.recentMessages) {
-      const conversationScore = this.scoreConversationRelevance(file, context.recentMessages);
+      const conversationScore = this.scoreConversationRelevance(
+        file,
+        context.recentMessages,
+      );
       if (conversationScore > 0) {
         score += conversationScore;
         reasons.push(`Conversation match: +${conversationScore}`);
@@ -125,8 +128,10 @@ export class FileRelevanceScorer {
     // Extract keywords from query
     const keywords = queryLower
       .split(/\s+/)
-      .filter(w => w.length > 2)
-      .filter(w => !['the', 'and', 'for', 'with', 'this', 'that'].includes(w));
+      .filter((w) => w.length > 2)
+      .filter(
+        (w) => !['the', 'and', 'for', 'with', 'this', 'that'].includes(w),
+      );
 
     for (const keyword of keywords) {
       // Path match is very relevant
@@ -135,7 +140,8 @@ export class FileRelevanceScorer {
       }
 
       // Content match
-      const matches = (contentLower.match(new RegExp(keyword, 'g')) || []).length;
+      const matches = (contentLower.match(new RegExp(keyword, 'g')) || [])
+        .length;
       if (matches > 0) {
         score += Math.min(matches * 2, 20);
       }
@@ -165,7 +171,7 @@ export class FileRelevanceScorer {
     // Check task descriptions
     const planText = JSON.stringify(plan).toLowerCase();
     const fileName = path.basename(file.path).toLowerCase();
-    
+
     if (planText.includes(fileName)) {
       score += 20;
     }
@@ -178,7 +184,7 @@ export class FileRelevanceScorer {
    */
   private scoreConversationRelevance(
     file: FileContent,
-    messages: ConversationMessage[]
+    messages: ConversationMessage[],
   ): number {
     let score = 0;
     const recentMessages = messages.slice(-5);
@@ -186,7 +192,7 @@ export class FileRelevanceScorer {
 
     for (const msg of recentMessages) {
       const msgLower = msg.content.toLowerCase();
-      
+
       if (msgLower.includes(fileName)) {
         score += 10;
       }
@@ -205,12 +211,12 @@ export class FileRelevanceScorer {
    */
   private scoreImportRelevance(
     file: FileContent,
-    imports: Map<string, string[]>
+    imports: Map<string, string[]>,
   ): number {
     let score = 0;
 
     // Files that import this file
-    for (const [importer, imported] of imports) {
+    for (const [_importer, imported] of imports) {
       if (imported.includes(file.path)) {
         score += 5;
       }
@@ -238,7 +244,7 @@ export class FileRelevanceScorer {
       'package.json': 20,
       'tsconfig.json': 10,
       '.env': 5,
-      'readme.md': 5
+      'readme.md': 5,
     };
 
     return keyFiles[fileName] || 0;
@@ -254,7 +260,7 @@ export class FileRelevanceScorer {
 
     for (const file of files) {
       const fileImports: string[] = [];
-      
+
       let match;
       while ((match = importRegex.exec(file.content)) !== null) {
         if (match[1]?.startsWith('.')) {

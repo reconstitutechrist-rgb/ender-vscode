@@ -3,7 +3,7 @@
  * Fetches up-to-date library documentation
  */
 
-import { logger, retry } from '../utils';
+import { logger } from '../utils';
 
 // Declare globals for VS Code Node environment
 declare const fetch: any;
@@ -48,7 +48,7 @@ export class Context7Client {
       maxTokens: 5000,
       cacheEnabled: true,
       cacheTtlMinutes: 60,
-      ...config
+      ...config,
     };
     if (config?.baseUrl) this.baseUrl = config.baseUrl;
   }
@@ -65,27 +65,34 @@ export class Context7Client {
       if (localMatches.length > 0) return localMatches;
 
       if (!this.config.apiKey) {
-        logger.debug('No Context7 API key, skipping remote resolution', 'Context7');
+        logger.debug(
+          'No Context7 API key, skipping remote resolution',
+          'Context7',
+        );
         return [];
       }
 
       // Call API
-      const response = await fetch(`${this.baseUrl}/libraries/search?q=${encodeURIComponent(libraryName)}`, {
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await fetch(
+        `${this.baseUrl}/libraries/search?q=${encodeURIComponent(libraryName)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.config.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
 
       if (!response.ok) {
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json() as { matches: LibraryMatch[] };
+      const data = (await response.json()) as { matches: LibraryMatch[] };
       return data.matches || [];
-
     } catch (error) {
-      logger.error(`Failed to resolve library: ${libraryName}`, 'Context7', { error });
+      logger.error(`Failed to resolve library: ${libraryName}`, 'Context7', {
+        error,
+      });
       return [];
     }
   }
@@ -110,15 +117,21 @@ export class Context7Client {
     }
 
     try {
-      const documentation = await this.fetchDocumentation(libraryId, topic, maxTokens);
-      
+      const documentation = await this.fetchDocumentation(
+        libraryId,
+        topic,
+        maxTokens,
+      );
+
       if (documentation && this.config.cacheEnabled) {
         this.addToCache(cacheKey, documentation);
       }
 
       return documentation;
     } catch (error) {
-      logger.error(`Failed to fetch docs for ${libraryId}`, 'Context7', { error });
+      logger.error(`Failed to fetch docs for ${libraryId}`, 'Context7', {
+        error,
+      });
       return null;
     }
   }
@@ -128,7 +141,7 @@ export class Context7Client {
    */
   async fetchDocsForImports(imports: string[]): Promise<Documentation[]> {
     const docs: Documentation[] = [];
-    const unknownLibraries = imports.filter(lib => !this.isBuiltIn(lib));
+    const unknownLibraries = imports.filter((lib) => !this.isBuiltIn(lib));
 
     // Process in batches
     for (const lib of unknownLibraries) {
@@ -136,7 +149,7 @@ export class Context7Client {
       if (matches.length > 0 && matches[0]) {
         const doc = await this.getLibraryDocs({
           libraryId: matches[0].id,
-          maxTokens: 3000
+          maxTokens: 3000,
         });
         if (doc) docs.push(doc);
       }
@@ -150,9 +163,10 @@ export class Context7Client {
    */
   parseImports(code: string): string[] {
     const imports: string[] = [];
-    
+
     // ES6 imports
-    const es6Regex = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+)?['"]([^'"]+)['"]/g;
+    const es6Regex =
+      /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+)?['"]([^'"]+)['"]/g;
     let match;
     while ((match = es6Regex.exec(code)) !== null) {
       if (match[1]) imports.push(this.normalizeImportPath(match[1]));
@@ -173,45 +187,50 @@ export class Context7Client {
   private async fetchDocumentation(
     libraryId: string,
     topic?: string,
-    maxTokens?: number
+    maxTokens?: number,
   ): Promise<Documentation | null> {
     if (!this.config.apiKey) {
       logger.debug('No Context7 API key, cannot fetch remote docs', 'Context7');
       // Return placeholder if no key
-      return {
+      const result: Documentation = {
         libraryId,
         content: `Documentation for ${libraryId} (Remote fetch requires API Key)`,
-        topic: topic || undefined,
         tokens: 10,
-        source: 'local-fallback'
+        source: 'local-fallback',
       };
+      if (topic) {
+        result.topic = topic;
+      }
+      return result;
     }
 
     logger.debug(`Fetching remote docs for ${libraryId}`, 'Context7');
 
-    const url = new URL(`${this.baseUrl}/libraries/${encodeURIComponent(libraryId)}/docs`);
+    const url = new URL(
+      `${this.baseUrl}/libraries/${encodeURIComponent(libraryId)}/docs`,
+    );
     if (topic) url.searchParams.append('topic', topic);
     if (maxTokens) url.searchParams.append('max_tokens', maxTokens.toString());
 
     const response = await fetch(url.toString(), {
       headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
-        'Content-Type': 'application/json'
-      }
+        Authorization: `Bearer ${this.config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
     });
 
     if (!response.ok) {
       throw new Error(`Context7 API Error: ${response.status}`);
     }
 
-    const data = await response.json() as any;
-    
+    const data = (await response.json()) as any;
+
     return {
       libraryId,
       content: data.content,
       ...(data.topic ? { topic: data.topic } : {}),
       tokens: data.tokens,
-      source: 'context7-api'
+      source: 'context7-api',
     };
   }
 
@@ -221,26 +240,26 @@ export class Context7Client {
   private getKnownLibraryMatches(name: string): LibraryMatch[] {
     // Kept as optimization / fallback
     const knownLibraries: Record<string, LibraryMatch> = {
-      'react': {
+      react: {
         id: '/facebook/react',
         name: 'React',
         description: 'A JavaScript library for building user interfaces',
         codeSnippetCount: 500,
-        trustScore: 10
+        trustScore: 10,
       },
-      'next': {
+      next: {
         id: '/vercel/next.js',
         name: 'Next.js',
         description: 'The React Framework for Production',
         codeSnippetCount: 800,
-        trustScore: 10
+        trustScore: 10,
       },
       // ... (Add more common ones)
     };
 
     const normalizedName = name.toLowerCase().replace(/^@/, '');
     const library = knownLibraries[name] || knownLibraries[normalizedName];
-    
+
     return library ? [library] : [];
   }
 
@@ -249,12 +268,35 @@ export class Context7Client {
    */
   private isBuiltIn(importPath: string): boolean {
     const builtIns = [
-      'fs', 'path', 'http', 'https', 'crypto', 'util', 'os', 'events',
-      'stream', 'buffer', 'querystring', 'url', 'child_process', 'cluster',
-      'dns', 'net', 'readline', 'repl', 'tls', 'dgram', 'vm', 'zlib',
-      'assert', 'console', 'process', 'timers', 'module'
+      'fs',
+      'path',
+      'http',
+      'https',
+      'crypto',
+      'util',
+      'os',
+      'events',
+      'stream',
+      'buffer',
+      'querystring',
+      'url',
+      'child_process',
+      'cluster',
+      'dns',
+      'net',
+      'readline',
+      'repl',
+      'tls',
+      'dgram',
+      'vm',
+      'zlib',
+      'assert',
+      'console',
+      'process',
+      'timers',
+      'module',
     ];
-    
+
     // Also exclude relative imports
     if (importPath.startsWith('.') || importPath.startsWith('/')) {
       return true;
@@ -298,7 +340,7 @@ export class Context7Client {
   private addToCache(key: string, documentation: Documentation): void {
     this.cache.set(key, {
       documentation,
-      cachedAt: new Date()
+      cachedAt: new Date(),
     });
   }
 

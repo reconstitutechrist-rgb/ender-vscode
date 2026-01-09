@@ -12,7 +12,9 @@ interface CachedCompletion {
   timestamp: number;
 }
 
-export class InlineCompletionProvider implements vscode.InlineCompletionItemProvider {
+export class InlineCompletionProvider
+  implements vscode.InlineCompletionItemProvider
+{
   private cache = new Map<string, CachedCompletion>();
   private readonly CACHE_TTL = 30000; // 30 seconds
   private readonly MAX_CONTEXT_LINES = 20;
@@ -25,15 +27,18 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
   async provideInlineCompletionItems(
     document: vscode.TextDocument,
     position: vscode.Position,
-    context: vscode.InlineCompletionContext,
-    token: vscode.CancellationToken
+    _context: vscode.InlineCompletionContext,
+    token: vscode.CancellationToken,
   ): Promise<vscode.InlineCompletionItem[]> {
     // Skip if cancelled
     if (token.isCancellationRequested) return [];
 
     // Skip if API client not ready
     if (!apiClient.isReady()) {
-      logger.debug('Inline completion skipped: API client not ready', 'InlineProvider');
+      logger.debug(
+        'Inline completion skipped: API client not ready',
+        'InlineProvider',
+      );
       return [];
     }
 
@@ -80,7 +85,12 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
       const language = document.languageId;
 
       // Request completion from AI
-      const completion = await this.getAICompletion(prefix, suffix, language, token);
+      const completion = await this.getAICompletion(
+        prefix,
+        suffix,
+        language,
+        token,
+      );
 
       if (!completion || token.isCancellationRequested) {
         return [];
@@ -95,7 +105,10 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
       return this.createCompletionItems(completion, position);
     } catch (error) {
       if (error instanceof Error) {
-        logger.debug(`Inline completion error: ${error.message}`, 'InlineProvider');
+        logger.debug(
+          `Inline completion error: ${error.message}`,
+          'InlineProvider',
+        );
       }
       return [];
     } finally {
@@ -106,7 +119,10 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
   /**
    * Get prefix context around cursor
    */
-  private getPrefix(document: vscode.TextDocument, position: vscode.Position): string {
+  private getPrefix(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+  ): string {
     const startLine = Math.max(0, position.line - this.MAX_CONTEXT_LINES);
     const lines: string[] = [];
 
@@ -115,7 +131,9 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
     }
 
     // Add current line up to cursor
-    lines.push(document.lineAt(position.line).text.substring(0, position.character));
+    lines.push(
+      document.lineAt(position.line).text.substring(0, position.character),
+    );
 
     return lines.join('\n');
   }
@@ -123,12 +141,17 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
   /**
    * Get suffix context after cursor
    */
-  private getSuffix(document: vscode.TextDocument, position: vscode.Position): string {
+  private getSuffix(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+  ): string {
     const endLine = Math.min(document.lineCount - 1, position.line + 5);
     const lines: string[] = [];
 
     // Rest of current line
-    lines.push(document.lineAt(position.line).text.substring(position.character));
+    lines.push(
+      document.lineAt(position.line).text.substring(position.character),
+    );
 
     // Following lines
     for (let i = position.line + 1; i <= endLine; i++) {
@@ -144,7 +167,7 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
   private isInStringOrComment(
     document: vscode.TextDocument,
     _position: vscode.Position,
-    linePrefix: string
+    linePrefix: string,
   ): boolean {
     // Check for line comments
     const language = document.languageId;
@@ -162,7 +185,11 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
     const backticks = (linePrefix.match(/`/g) || []).length;
 
     // Odd number of quotes means we're inside a string
-    if (singleQuotes % 2 !== 0 || doubleQuotes % 2 !== 0 || backticks % 2 !== 0) {
+    if (
+      singleQuotes % 2 !== 0 ||
+      doubleQuotes % 2 !== 0 ||
+      backticks % 2 !== 0
+    ) {
       return true;
     }
 
@@ -172,13 +199,25 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
   /**
    * Get comment markers for language
    */
-  private getCommentMarkers(language: string): { line: string[]; block: [string, string][] } {
-    const markers: Record<string, { line: string[]; block: [string, string][] }> = {
+  private getCommentMarkers(language: string): {
+    line: string[];
+    block: [string, string][];
+  } {
+    const markers: Record<
+      string,
+      { line: string[]; block: [string, string][] }
+    > = {
       typescript: { line: ['//'], block: [['/*', '*/']] },
       javascript: { line: ['//'], block: [['/*', '*/']] },
       typescriptreact: { line: ['//'], block: [['/*', '*/']] },
       javascriptreact: { line: ['//'], block: [['/*', '*/']] },
-      python: { line: ['#'], block: [['"""', '"""'], ["'''", "'''"]] },
+      python: {
+        line: ['#'],
+        block: [
+          ['"""', '"""'],
+          ["'''", "'''"],
+        ],
+      },
       ruby: { line: ['#'], block: [['=begin', '=end']] },
       go: { line: ['//'], block: [['/*', '*/']] },
       rust: { line: ['//'], block: [['/*', '*/']] },
@@ -199,7 +238,7 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
     prefix: string,
     suffix: string,
     language: string,
-    token: vscode.CancellationToken
+    token: vscode.CancellationToken,
   ): Promise<string | null> {
     const prompt = this.buildPrompt(prefix, suffix, language);
 
@@ -209,7 +248,7 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
         system: `You are a code completion assistant. Output ONLY the code that should be inserted at the cursor position. Never include explanations, markdown formatting, or code blocks. Output raw code only. Keep completions short and focused (1-3 lines max).`,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 150,
-        temperature: 0
+        temperature: 0,
       });
 
       if (token.isCancellationRequested) {
@@ -233,7 +272,11 @@ export class InlineCompletionProvider implements vscode.InlineCompletionItemProv
   /**
    * Build the completion prompt
    */
-  private buildPrompt(prefix: string, suffix: string, language: string): string {
+  private buildPrompt(
+    prefix: string,
+    suffix: string,
+    language: string,
+  ): string {
     const suffixPreview = suffix.slice(0, 200);
 
     return `Complete the following ${language} code at the <CURSOR> position.
@@ -264,8 +307,12 @@ Output ONLY the code to insert at <CURSOR>. No explanation, no markdown, no code
     }
 
     // Reject if looks like an explanation
-    if (completion.startsWith('Here') || completion.startsWith('This') ||
-        completion.startsWith('The ') || completion.startsWith('I ')) {
+    if (
+      completion.startsWith('Here') ||
+      completion.startsWith('This') ||
+      completion.startsWith('The ') ||
+      completion.startsWith('I ')
+    ) {
       return false;
     }
 
@@ -277,11 +324,11 @@ Output ONLY the code to insert at <CURSOR>. No explanation, no markdown, no code
    */
   private createCompletionItems(
     completion: string,
-    position: vscode.Position
+    position: vscode.Position,
   ): vscode.InlineCompletionItem[] {
     const item = new vscode.InlineCompletionItem(
       completion,
-      new vscode.Range(position, position)
+      new vscode.Range(position, position),
     );
 
     return [item];
@@ -293,7 +340,7 @@ Output ONLY the code to insert at <CURSOR>. No explanation, no markdown, no code
   private getCacheKey(
     document: vscode.TextDocument,
     position: vscode.Position,
-    linePrefix: string
+    linePrefix: string,
   ): string {
     return `${document.uri.toString()}:${position.line}:${linePrefix.slice(-50)}`;
   }
@@ -314,8 +361,9 @@ Output ONLY the code to insert at <CURSOR>. No explanation, no markdown, no code
 
     // If still too large, remove oldest
     if (this.cache.size > maxSize) {
-      const entries = Array.from(this.cache.entries())
-        .sort((a, b) => a[1].timestamp - b[1].timestamp);
+      const entries = Array.from(this.cache.entries()).sort(
+        (a, b) => a[1].timestamp - b[1].timestamp,
+      );
 
       const toDelete = entries.slice(0, entries.length - maxSize);
       for (const [key] of toDelete) {

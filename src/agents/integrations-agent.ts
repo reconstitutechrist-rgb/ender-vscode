@@ -4,7 +4,14 @@
  */
 
 import { BaseAgent, AgentExecuteParams } from './base-agent';
-import type { AgentConfig, AgentResult, ContextBundle, FileChange, ValidationResult, ValidationIssue } from '../types';
+import type {
+  AgentConfig,
+  AgentResult,
+  ContextBundle,
+  FileChange,
+  ValidationResult,
+  ValidationIssue,
+} from '../types';
 import { logger, generateId } from '../utils';
 import { apiClient } from '../api';
 
@@ -35,7 +42,7 @@ export class IntegrationsAgent extends BaseAgent {
       model: 'claude-opus-4-5-20251101',
       systemPrompt: INTEGRATIONS_AGENT_SYSTEM_PROMPT,
       capabilities: ['api_integration', 'auth_validation', 'webhook_security'],
-      maxTokens: 4096
+      maxTokens: 4096,
     };
     super(config, apiClient);
   }
@@ -47,39 +54,51 @@ export class IntegrationsAgent extends BaseAgent {
     try {
       // Validate integrations in files if provided
       if (files && files.length > 0) {
-        const validationResults = await this.validateIntegrations(files, context);
-        return this.createSuccessResult(JSON.stringify(validationResults, null, 2), {
-          explanation: this.formatValidationExplanation(validationResults),
-          confidence: 85,
-          tokensUsed: { input: 0, output: 0 },
-          startTime
-        });
+        const validationResults = await this.validateIntegrations(
+          files,
+          context,
+        );
+        return this.createSuccessResult(
+          JSON.stringify(validationResults, null, 2),
+          {
+            explanation: this.formatValidationExplanation(validationResults),
+            confidence: 85,
+            tokensUsed: { input: 0, output: 0, total: 0, cost: 0 },
+            startTime,
+          },
+        );
       }
 
       const response = await this.callApi({
         model: this.defaultModel,
         system: this.buildSystemPrompt(context),
-        messages: this.buildMessages(this.buildIntegrationPrompt(task, context), context),
+        messages: this.buildMessages(
+          this.buildIntegrationPrompt(task, context),
+          context,
+        ),
         maxTokens: this.maxTokens,
-        metadata: { agent: 'integrations-agent', taskId: generateId() }
+        metadata: { agent: 'integrations-agent', taskId: generateId() },
       });
 
       return this.createSuccessResult(response.content, {
         explanation: response.content,
         confidence: 85,
         tokensUsed: response.usage,
-        startTime
+        startTime,
       });
     } catch (error) {
       logger.error('Integrations Agent failed', 'IntegrationsAgent', { error });
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
 
-  private async validateIntegrations(changes: FileChange[], context: ContextBundle): Promise<ValidationResult[]> {
+  private async validateIntegrations(
+    changes: FileChange[],
+    _context: ContextBundle,
+  ): Promise<ValidationResult[]> {
     const results: ValidationResult[] = [];
 
     for (const change of changes) {
@@ -89,20 +108,22 @@ export class IntegrationsAgent extends BaseAgent {
 
       // Check auth security
       issues.push(...this.checkAuthSecurity(change));
-      
+
       // Check API error handling
       issues.push(...this.checkApiErrorHandling(change));
-      
+
       // Check webhook security
       issues.push(...this.checkWebhookSecurity(change));
 
       if (issues.length > 0) {
         results.push({
           validator: 'api-contract-validator',
-          passed: issues.filter(i => i.severity === 'error').length === 0,
-          severity: issues.some(i => i.severity === 'error') ? 'error' : 'warning',
+          passed: issues.filter((i) => i.severity === 'error').length === 0,
+          severity: issues.some((i) => i.severity === 'error')
+            ? 'error'
+            : 'warning',
           issues,
-          duration: 0
+          duration: 0,
         });
       }
     }
@@ -116,14 +137,20 @@ export class IntegrationsAgent extends BaseAgent {
     const lines = content.split('\n');
 
     // Check for tokens in localStorage
-    if (content.includes('localStorage') && content.match(/token|auth|jwt|session/i)) {
-      const line = lines.findIndex(l => l.includes('localStorage') && l.match(/token|auth/i));
+    if (
+      content.includes('localStorage') &&
+      content.match(/token|auth|jwt|session/i)
+    ) {
+      const line = lines.findIndex(
+        (l) => l.includes('localStorage') && l.match(/token|auth/i),
+      );
       issues.push({
         file: change.path,
         line: line + 1,
-        message: 'Authentication tokens stored in localStorage (XSS vulnerable)',
+        message:
+          'Authentication tokens stored in localStorage (XSS vulnerable)',
         severity: 'error',
-        suggestion: 'Use httpOnly cookies or secure session storage'
+        suggestion: 'Use httpOnly cookies or secure session storage',
       });
     }
 
@@ -133,7 +160,7 @@ export class IntegrationsAgent extends BaseAgent {
         file: change.path,
         message: 'Token passed in URL query parameter',
         severity: 'error',
-        suggestion: 'Pass tokens in Authorization header instead'
+        suggestion: 'Pass tokens in Authorization header instead',
       });
     }
 
@@ -143,7 +170,7 @@ export class IntegrationsAgent extends BaseAgent {
         file: change.path,
         message: 'Access token used without refresh token mechanism',
         severity: 'warning',
-        suggestion: 'Implement token refresh to handle expiration'
+        suggestion: 'Implement token refresh to handle expiration',
       });
     }
 
@@ -159,22 +186,26 @@ export class IntegrationsAgent extends BaseAgent {
     const catchCalls = content.match(/\.catch\s*\(|catch\s*\(/g) ?? [];
     const tryCalls = content.match(/try\s*\{/g) ?? [];
 
-    if (fetchCalls.length > (catchCalls.length + tryCalls.length)) {
+    if (fetchCalls.length > catchCalls.length + tryCalls.length) {
       issues.push({
         file: change.path,
         message: 'API calls without proper error handling',
         severity: 'warning',
-        suggestion: 'Wrap API calls in try/catch or use .catch()'
+        suggestion: 'Wrap API calls in try/catch or use .catch()',
       });
     }
 
     // Check for unchecked response status
-    if (content.includes('fetch(') && !content.includes('response.ok') && !content.includes('status')) {
+    if (
+      content.includes('fetch(') &&
+      !content.includes('response.ok') &&
+      !content.includes('status')
+    ) {
       issues.push({
         file: change.path,
         message: 'Fetch response status not checked',
         severity: 'warning',
-        suggestion: 'Check response.ok or response.status before using data'
+        suggestion: 'Check response.ok or response.status before using data',
       });
     }
 
@@ -186,13 +217,16 @@ export class IntegrationsAgent extends BaseAgent {
     const content = change.content;
 
     // Check for webhook handlers without signature verification
-    if (content.match(/webhook|hook/i) && content.match(/req\.body|request\.body/)) {
+    if (
+      content.match(/webhook|hook/i) &&
+      content.match(/req\.body|request\.body/)
+    ) {
       if (!content.match(/signature|verify|hmac|sha256/i)) {
         issues.push({
           file: change.path,
           message: 'Webhook handler without signature verification',
           severity: 'error',
-          suggestion: 'Verify webhook signatures to prevent spoofing'
+          suggestion: 'Verify webhook signatures to prevent spoofing',
         });
       }
     }
@@ -205,7 +239,7 @@ export class IntegrationsAgent extends BaseAgent {
 
     if (context.relevantFiles.length > 0) {
       prompt += '## Relevant Files\n';
-      context.relevantFiles.forEach(f => {
+      context.relevantFiles.forEach((f) => {
         prompt += `\n### ${f.path}\n\`\`\`${f.language}\n${f.content}\n\`\`\``;
       });
     }
@@ -214,17 +248,19 @@ export class IntegrationsAgent extends BaseAgent {
   }
 
   private formatValidationExplanation(results: ValidationResult[]): string {
-    const totalIssues = results.flatMap(r => r.issues).length;
-    
+    const totalIssues = results.flatMap((r) => r.issues).length;
+
     if (totalIssues === 0) {
       return '✅ No integration security issues found';
     }
 
     const lines = [`⚠️ Found ${totalIssues} integration issue(s):\n`];
-    
-    results.forEach(r => {
-      r.issues.forEach(issue => {
-        lines.push(`- ${issue.file}${issue.line ? `:${issue.line}` : ''}: ${issue.message}`);
+
+    results.forEach((r) => {
+      r.issues.forEach((issue) => {
+        lines.push(
+          `- ${issue.file}${issue.line ? `:${issue.line}` : ''}: ${issue.message}`,
+        );
         if (issue.suggestion) lines.push(`  → ${issue.suggestion}`);
       });
     });

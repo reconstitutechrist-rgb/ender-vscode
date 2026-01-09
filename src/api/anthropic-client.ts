@@ -4,12 +4,12 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { logger, CostTracker, createTokenUsage, generateId, retry } from '../utils';
-import type { 
-  ModelId, 
-  AgentType, 
+import { logger, CostTracker, createTokenUsage, retry } from '../utils';
+import type {
+  ModelId,
+  AgentType,
   ConversationMessage,
-  TokenUsage 
+  TokenUsage,
 } from '../types';
 
 export interface ChatParams {
@@ -73,7 +73,9 @@ export class AnthropicClient {
    */
   private ensureReady(): Anthropic {
     if (!this.client) {
-      throw new Error('Anthropic client not initialized. Call initialize() first.');
+      throw new Error(
+        'Anthropic client not initialized. Call initialize() first.',
+      );
     }
     return this.client;
   }
@@ -89,7 +91,7 @@ export class AnthropicClient {
       model: params.model,
       messageCount: params.messages.length,
       maxTokens: params.maxTokens,
-      agent: params.metadata?.agent
+      agent: params.metadata?.agent,
     });
 
     try {
@@ -100,7 +102,7 @@ export class AnthropicClient {
             max_tokens: params.maxTokens,
             temperature: params.temperature ?? 0.7,
             system: params.system,
-            messages: params.messages
+            messages: params.messages,
           });
         },
         {
@@ -111,15 +113,15 @@ export class AnthropicClient {
             if (error instanceof Anthropic.RateLimitError) return true;
             if (error instanceof Anthropic.InternalServerError) return true;
             return false;
-          }
-        }
+          },
+        },
       );
 
       const duration = Date.now() - startTime;
       const usage = createTokenUsage(
         params.model,
         response.usage.input_tokens,
-        response.usage.output_tokens
+        response.usage.output_tokens,
       );
 
       // Track cost
@@ -128,7 +130,7 @@ export class AnthropicClient {
       // Extract text content
       const content = response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-        .map(block => block.text)
+        .map((block) => block.text)
         .join('');
 
       logger.api(params.model, usage, duration);
@@ -138,10 +140,13 @@ export class AnthropicClient {
         content,
         stopReason: response.stop_reason,
         usage,
-        model: response.model
+        model: response.model,
       };
     } catch (error) {
-      logger.error('Chat request failed', 'API', { error, params: { ...params, system: '[redacted]' } });
+      logger.error('Chat request failed', 'API', {
+        error,
+        params: { ...params, system: '[redacted]' },
+      });
       throw this.handleError(error);
     }
   }
@@ -155,7 +160,7 @@ export class AnthropicClient {
 
     logger.debug('Starting chat stream', 'API', {
       model: params.model,
-      agent: params.metadata?.agent
+      agent: params.metadata?.agent,
     });
 
     try {
@@ -164,7 +169,7 @@ export class AnthropicClient {
         max_tokens: params.maxTokens,
         temperature: params.temperature ?? 0.7,
         system: params.system,
-        messages: params.messages
+        messages: params.messages,
       });
 
       let inputTokens = 0;
@@ -190,7 +195,11 @@ export class AnthropicClient {
       this.costTracker.addCost(usage.cost);
 
       const duration = Date.now() - startTime;
-      logger.api(params.model, { input: inputTokens, output: outputTokens }, duration);
+      logger.api(
+        params.model,
+        { input: inputTokens, output: outputTokens },
+        duration,
+      );
 
       yield { type: 'usage', usage };
       yield { type: 'done' };
@@ -202,20 +211,14 @@ export class AnthropicClient {
 
   /**
    * Count tokens for content (estimate)
+   * Uses character-based estimation since countTokens API may not be available
    */
-  async countTokens(content: string, model: ModelId = 'claude-sonnet-4-5-20250929'): Promise<number> {
-    const client = this.ensureReady();
-
-    try {
-      const response = await client.messages.countTokens({
-        model,
-        messages: [{ role: 'user', content }]
-      });
-      return response.input_tokens;
-    } catch {
-      // Fallback to estimation if count fails
-      return Math.ceil(content.length / 3.5);
-    }
+  async countTokens(
+    content: string,
+    _model: ModelId = 'claude-sonnet-4-5-20250929',
+  ): Promise<number> {
+    // Use character-based estimation (roughly 3.5 chars per token)
+    return Math.ceil(content.length / 3.5);
   }
 
   /**
@@ -236,24 +239,32 @@ export class AnthropicClient {
         case 401:
           return new Error('Invalid API key. Please check your configuration.');
         case 403:
-          return new Error('Access denied. Your API key may not have the required permissions.');
+          return new Error(
+            'Access denied. Your API key may not have the required permissions.',
+          );
         case 404:
-          return new Error('Model not found. The requested model may not be available.');
+          return new Error(
+            'Model not found. The requested model may not be available.',
+          );
         case 429:
-          return new Error('Rate limited. Please wait before making more requests.');
+          return new Error(
+            'Rate limited. Please wait before making more requests.',
+          );
         case 500:
         case 502:
         case 503:
-          return new Error('Anthropic service temporarily unavailable. Please try again.');
+          return new Error(
+            'Anthropic service temporarily unavailable. Please try again.',
+          );
         default:
           return new Error(`API error: ${error.message}`);
       }
     }
-    
+
     if (error instanceof Error) {
       return error;
     }
-    
+
     return new Error('Unknown error occurred');
   }
 }
@@ -262,11 +273,11 @@ export class AnthropicClient {
  * Convert conversation messages to API format
  */
 export function formatMessagesForApi(
-  messages: ConversationMessage[]
+  messages: ConversationMessage[],
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
-  return messages.map(msg => ({
+  return messages.map((msg) => ({
     role: msg.role,
-    content: msg.content
+    content: msg.content,
   }));
 }
 

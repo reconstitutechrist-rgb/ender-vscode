@@ -13,7 +13,7 @@ import type {
   CoderOutput,
   Plan,
   PlanPhase,
-  PlanTask
+  PlanTask,
 } from '../types';
 import { logger, generateId } from '../utils';
 import { apiClient } from '../api';
@@ -66,7 +66,7 @@ export class CoderAgent extends BaseAgent {
       model: 'claude-sonnet-4-5-20250929',
       systemPrompt: CODER_SYSTEM_PROMPT,
       capabilities: ['code_writing', 'file_modification', 'plan_execution'],
-      maxTokens: 8192
+      maxTokens: 8192,
     };
     super(config, apiClient);
   }
@@ -85,14 +85,18 @@ export class CoderAgent extends BaseAgent {
     logger.agent('coder', 'Starting coding task', {
       task: task.slice(0, 100),
       hasPlan: !!plan,
-      phase: phase?.index
+      phase: phase?.index,
     });
 
     try {
       // Build options conditionally to satisfy exactOptionalPropertyTypes
       const options: { plan?: Plan; phase?: PlanPhase } = {};
-      if (plan) { options.plan = plan; }
-      if (phase) { options.phase = phase; }
+      if (plan) {
+        options.plan = plan;
+      }
+      if (phase) {
+        options.phase = phase;
+      }
 
       // Determine model based on complexity
       const taskType = this.determineTaskType(task, context, options);
@@ -107,9 +111,11 @@ export class CoderAgent extends BaseAgent {
       // Build metadata conditionally
       const metadata: { agent: 'coder'; taskId: string; planId?: string } = {
         agent: 'coder',
-        taskId: generateId()
+        taskId: generateId(),
       };
-      if (plan?.id) { metadata.planId = plan.id; }
+      if (plan?.id) {
+        metadata.planId = plan.id;
+      }
 
       // Call API
       const response = await this.callApi({
@@ -117,7 +123,7 @@ export class CoderAgent extends BaseAgent {
         system: this.buildSystemPrompt(context),
         messages,
         maxTokens: this.maxTokens,
-        metadata
+        metadata,
       });
 
       // Parse response
@@ -134,14 +140,17 @@ export class CoderAgent extends BaseAgent {
         confidence: 85,
         tokensUsed: response.usage,
         startTime,
-        nextAgent: 'reviewer'
+        nextAgent: 'reviewer',
       });
     } catch (error) {
-      logger.error('Coder agent failed', 'Coder', { error, task: task.slice(0, 100) });
+      logger.error('Coder agent failed', 'Coder', {
+        error,
+        task: task.slice(0, 100),
+      });
 
       return this.createErrorResult(
         error instanceof Error ? error : new Error(String(error)),
-        startTime
+        startTime,
       );
     }
   }
@@ -156,7 +165,7 @@ export class CoderAgent extends BaseAgent {
       plan?: Plan;
       phase?: PlanPhase;
       targetTask?: PlanTask;
-    }
+    },
   ): string {
     const parts: string[] = [];
 
@@ -165,16 +174,25 @@ export class CoderAgent extends BaseAgent {
 
     // Plan context if available
     if (options?.plan) {
-      parts.push(`\n## Active Plan\n**${options.plan.title}**\n${options.plan.description}`);
+      parts.push(
+        `\n## Active Plan\n**${options.plan.title}**\n${options.plan.description}`,
+      );
     }
 
     if (options?.phase) {
-      parts.push(`\n## Current Phase (${options.phase.index + 1}/${options.plan?.phases.length ?? '?'})\n**${options.phase.title}**\n${options.phase.description}`);
-      
+      parts.push(
+        `\n## Current Phase (${options.phase.index + 1}/${options.plan?.phases.length ?? '?'})\n**${options.phase.title}**\n${options.phase.description}`,
+      );
+
       if (options.phase.tasks.length > 0) {
         parts.push('\n### Tasks:');
         options.phase.tasks.forEach((t, i) => {
-          const status = t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '→' : '○';
+          const status =
+            t.status === 'completed'
+              ? '✓'
+              : t.status === 'in_progress'
+                ? '→'
+                : '○';
           parts.push(`${status} ${i + 1}. ${t.description}`);
         });
       }
@@ -194,25 +212,27 @@ export class CoderAgent extends BaseAgent {
     if (context.relevantFiles.length > 0) {
       parts.push('\n## Relevant Files');
       for (const file of context.relevantFiles) {
-        parts.push(`\n### ${file.path}\n\`\`\`${file.language}\n${file.content}\n\`\`\``);
+        parts.push(
+          `\n### ${file.path}\n\`\`\`${file.language}\n${file.content}\n\`\`\``,
+        );
       }
     }
 
     // Project settings and conventions
     if (context.projectSettings.effective.customRules.length > 0) {
       parts.push('\n## Project Rules');
-      context.projectSettings.effective.customRules.forEach(rule => {
+      context.projectSettings.effective.customRules.forEach((rule) => {
         parts.push(`- ${rule}`);
       });
     }
 
     // Active memory entries
-    const relevantMemory = context.activeMemory.filter(m => 
-      m.category === 'conventions' || m.category === 'architecture'
+    const relevantMemory = context.activeMemory.filter(
+      (m) => m.category === 'conventions' || m.category === 'architecture',
     );
     if (relevantMemory.length > 0) {
       parts.push('\n## Project Conventions');
-      relevantMemory.forEach(m => {
+      relevantMemory.forEach((m) => {
         parts.push(`- ${m.summary}`);
       });
     }
@@ -220,8 +240,10 @@ export class CoderAgent extends BaseAgent {
     // Assumptions to consider
     if (context.assumptions && context.assumptions.length > 0) {
       parts.push('\n## Assumptions');
-      context.assumptions.forEach(a => {
-        parts.push(`- ${a.assumption} (${a.verified ? 'verified' : 'unverified'})`);
+      context.assumptions.forEach((a) => {
+        parts.push(
+          `- ${a.assumption} (${a.verified ? 'verified' : 'unverified'})`,
+        );
       });
     }
 
@@ -241,7 +263,7 @@ export class CoderAgent extends BaseAgent {
           files: parsed.files || [],
           explanation: parsed.explanation || '',
           planStepCompleted: parsed.planStepCompleted || '',
-          testsNeeded: parsed.testsNeeded ?? false
+          testsNeeded: parsed.testsNeeded ?? false,
         };
       }
     } catch {
@@ -252,18 +274,19 @@ export class CoderAgent extends BaseAgent {
     const files: FileChange[] = [];
     const codeBlockRegex = /```(\w+)?\s*\n(?:\/\/\s*(\S+)\n)?([\s\S]*?)```/g;
     let match;
-    
+
     while ((match = codeBlockRegex.exec(content)) !== null) {
       const language = match[1] || 'typescript';
-      const path = match[2] || `generated-${files.length}.${this.getExtension(language)}`;
+      const path =
+        match[2] || `generated-${files.length}.${this.getExtension(language)}`;
       const code = match[3]?.trim() || '';
-      
+
       if (code) {
         files.push({
           path,
           content: code,
           operation: 'create',
-          explanation: 'Extracted from code block'
+          explanation: 'Extracted from code block',
         });
       }
     }
@@ -272,7 +295,7 @@ export class CoderAgent extends BaseAgent {
       files,
       explanation: content.slice(0, 500),
       planStepCompleted: '',
-      testsNeeded: false
+      testsNeeded: false,
     };
   }
 
@@ -282,12 +305,12 @@ export class CoderAgent extends BaseAgent {
   private validateAgainstPlan(output: CoderOutput, phase: PlanPhase): void {
     // Check that modified files are in the plan's affected files
     const allowedFiles = new Set(phase.affectedFiles);
-    
+
     for (const file of output.files) {
       if (!allowedFiles.has(file.path) && file.operation !== 'create') {
         logger.warn('File modification not in plan', 'Coder', {
           file: file.path,
-          allowedFiles: Array.from(allowedFiles)
+          allowedFiles: Array.from(allowedFiles),
         });
       }
     }
@@ -299,7 +322,7 @@ export class CoderAgent extends BaseAgent {
   private determineTaskType(
     task: string,
     context: ContextBundle,
-    options?: { plan?: Plan; phase?: PlanPhase }
+    options?: { plan?: Plan; phase?: PlanPhase },
   ): 'single_file_small_change' | 'multi_file_changes' | 'complex_refactoring' {
     // Multi-file changes
     if (options?.phase && options.phase.affectedFiles.length > 1) {
@@ -307,8 +330,14 @@ export class CoderAgent extends BaseAgent {
     }
 
     // Complex refactoring indicators
-    const complexIndicators = ['refactor', 'restructure', 'migrate', 'rewrite', 'overhaul'];
-    if (complexIndicators.some(i => task.toLowerCase().includes(i))) {
+    const complexIndicators = [
+      'refactor',
+      'restructure',
+      'migrate',
+      'rewrite',
+      'overhaul',
+    ];
+    if (complexIndicators.some((i) => task.toLowerCase().includes(i))) {
       return 'complex_refactoring';
     }
 
@@ -337,7 +366,7 @@ export class CoderAgent extends BaseAgent {
       html: 'html',
       json: 'json',
       yaml: 'yaml',
-      markdown: 'md'
+      markdown: 'md',
     };
     return extensions[language.toLowerCase()] ?? 'txt';
   }

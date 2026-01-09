@@ -3,7 +3,11 @@
  * All specialized agents extend this base class
  */
 
-import { AnthropicClient, ChatParams, ChatResponse } from '../api/anthropic-client';
+import {
+  AnthropicClient,
+  ChatParams,
+  ChatResponse,
+} from '../api/anthropic-client';
 import { modelRouter, RoutingContext } from '../api/model-router';
 import { requestQueue } from '../api/request-queue';
 import { logger } from '../utils';
@@ -15,7 +19,7 @@ import type {
   ModelId,
   TaskType,
   FileChange,
-  TokenUsage
+  TokenUsage,
 } from '../types';
 
 export interface AgentExecuteParams {
@@ -114,8 +118,9 @@ export abstract class BaseAgent {
       prompt += `\n\n## Current Plan: ${context.currentPlan.title}
 Status: ${context.currentPlan.status}
 Current Phase: ${context.currentPlan.currentPhaseIndex + 1} of ${context.currentPlan.phases.length}`;
-      
-      const currentPhase = context.currentPlan.phases[context.currentPlan.currentPhaseIndex];
+
+      const currentPhase =
+        context.currentPlan.phases[context.currentPlan.currentPhaseIndex];
       if (currentPhase) {
         prompt += `\nPhase: ${currentPhase.title}
 Description: ${currentPhase.description}`;
@@ -146,7 +151,7 @@ Description: ${currentPhase.description}`;
    */
   protected buildMessages(
     task: string,
-    context: ContextBundle
+    context: ContextBundle,
   ): Array<{ role: 'user' | 'assistant'; content: string }> {
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
@@ -155,7 +160,7 @@ Description: ${currentPhase.description}`;
     for (const msg of recentHistory) {
       messages.push({
         role: msg.role,
-        content: msg.content
+        content: msg.content,
       });
     }
 
@@ -165,16 +170,17 @@ Description: ${currentPhase.description}`;
       for (const file of context.relevantFiles) {
         filesContext += `### ${file.path}\n\`\`\`${file.language}\n${file.content}\n\`\`\`\n\n`;
       }
-      
+
       // Add files as a user message if not already part of history
-      if (!recentHistory.some(m => m.content.includes('## Relevant Files'))) {
+      if (!recentHistory.some((m) => m.content.includes('## Relevant Files'))) {
         messages.push({
           role: 'user',
-          content: filesContext
+          content: filesContext,
         });
         messages.push({
           role: 'assistant',
-          content: 'I\'ve reviewed the relevant files. What would you like me to do?'
+          content:
+            "I've reviewed the relevant files. What would you like me to do?",
         });
       }
     }
@@ -182,7 +188,7 @@ Description: ${currentPhase.description}`;
     // Add the current task
     messages.push({
       role: 'user',
-      content: task
+      content: task,
     });
 
     return messages;
@@ -191,10 +197,7 @@ Description: ${currentPhase.description}`;
   /**
    * Route to appropriate model
    */
-  protected routeModel(
-    taskType: TaskType,
-    context: ContextBundle
-  ): ModelId {
+  protected routeModel(taskType: TaskType, context: ContextBundle): ModelId {
     const routingContext: RoutingContext = {
       taskType,
       agent: this.type,
@@ -202,7 +205,7 @@ Description: ${currentPhase.description}`;
       fileCount: context.relevantFiles?.length ?? 0,
       hasBreakingChanges: false,
       isSecurityRelated: this.isSecurityRelated(taskType),
-      complexityScore: this.estimateComplexity(context)
+      complexityScore: this.estimateComplexity(context),
     };
 
     const decision = modelRouter.route(routingContext);
@@ -268,7 +271,7 @@ Description: ${currentPhase.description}`;
   protected isSecurityRelated(taskType: TaskType): boolean {
     const securityTasks: TaskType[] = [
       'security_scanning',
-      'integration_check'
+      'integration_check',
     ];
     return securityTasks.includes(taskType);
   }
@@ -279,7 +282,7 @@ Description: ${currentPhase.description}`;
   protected async callApi(params: ChatParams): Promise<ChatResponse> {
     return requestQueue.enqueue(this.type, () => this.apiClient.chat(params), {
       priority: this.getPriority(),
-      metadata: { agent: this.type }
+      metadata: { agent: this.type },
     });
   }
 
@@ -287,7 +290,11 @@ Description: ${currentPhase.description}`;
    * Get agent priority
    */
   protected getPriority(): 'high' | 'normal' | 'low' {
-    const highPriorityAgents: AgentType[] = ['conductor', 'reviewer', 'sanity-checker'];
+    const highPriorityAgents: AgentType[] = [
+      'conductor',
+      'reviewer',
+      'sanity-checker',
+    ];
     const lowPriorityAgents: AgentType[] = ['documenter', 'memory-keeper'];
 
     if (highPriorityAgents.includes(this.type)) return 'high';
@@ -300,9 +307,10 @@ Description: ${currentPhase.description}`;
    */
   protected parseFileChanges(content: string): FileChange[] {
     const changes: FileChange[] = [];
-    
+
     // Parse code blocks with file paths
-    const codeBlockRegex = /```(\w+)?\s*(?:\/\/|#|<!--)\s*(?:file:|path:)\s*([^\n]+)\n([\s\S]*?)```/g;
+    const codeBlockRegex =
+      /```(\w+)?\s*(?:\/\/|#|<!--)\s*(?:file:|path:)\s*([^\n]+)\n([\s\S]*?)```/g;
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
@@ -315,7 +323,7 @@ Description: ${currentPhase.description}`;
           path: filePath,
           content: code.trim(),
           operation: 'update', // Could be 'create' if file doesn't exist
-          explanation: `Changes to ${filePath}`
+          explanation: `Changes to ${filePath}`,
         });
       }
     }
@@ -333,11 +341,13 @@ Description: ${currentPhase.description}`;
       confidence: 0,
       tokensUsed: { input: 0, output: 0 },
       duration: Date.now() - startTime,
-      errors: [{
-        code: 'AGENT_ERROR',
-        message: error.message,
-        recoverable: true
-      }]
+      errors: [
+        {
+          code: 'AGENT_ERROR',
+          message: error.message,
+          recoverable: true,
+        },
+      ],
     };
   }
 
@@ -354,7 +364,7 @@ Description: ${currentPhase.description}`;
       startTime: number;
       warnings?: string[];
       nextAgent?: AgentType;
-    }
+    },
   ): AgentResult {
     const result: AgentResult = {
       success: true,
@@ -363,14 +373,22 @@ Description: ${currentPhase.description}`;
       confidence: options.confidence ?? 85,
       tokensUsed: {
         input: options.tokensUsed.input,
-        output: options.tokensUsed.output
+        output: options.tokensUsed.output,
       },
-      duration: Date.now() - options.startTime
+      duration: Date.now() - options.startTime,
     };
-    if (options.files) { result.files = options.files; }
-    if (options.explanation) { result.explanation = options.explanation; }
-    if (options.warnings) { result.warnings = options.warnings; }
-    if (options.nextAgent) { result.nextAgent = options.nextAgent; }
+    if (options.files) {
+      result.files = options.files;
+    }
+    if (options.explanation) {
+      result.explanation = options.explanation;
+    }
+    if (options.warnings) {
+      result.warnings = options.warnings;
+    }
+    if (options.nextAgent) {
+      result.nextAgent = options.nextAgent;
+    }
     return result;
   }
 

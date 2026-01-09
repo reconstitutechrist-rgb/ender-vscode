@@ -11,7 +11,7 @@ import type {
   ValidatorConfig,
   ValidationResult,
   ValidationIssue,
-  FileChange
+  FileChange,
 } from '../types';
 
 export interface ValidatorContext {
@@ -39,36 +39,44 @@ export abstract class BaseValidator {
     }
 
     const startTime = Date.now();
-    
+
     try {
       logger.debug(`Running validator: ${this.name}`, 'Validator');
       const issues = await this.validate(context);
       const duration = Date.now() - startTime;
-      
-      const passed = !issues.some(i => i.severity === 'error');
-      
+
+      const passed = !issues.some((i) => i.severity === 'error');
+
       logger.validator(this.name, passed ? 'pass' : 'fail', {
         issues: issues.length,
-        duration
+        duration,
       });
 
       return this.createResult(passed, issues, duration);
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error(`Validator ${this.name} threw error`, 'Validator', error);
-      
-      return this.createResult(false, [{
-        file: '',
-        message: `Validator error: ${error instanceof Error ? error.message : String(error)}`,
-        severity: 'error'
-      }], duration);
+
+      return this.createResult(
+        false,
+        [
+          {
+            file: '',
+            message: `Validator error: ${error instanceof Error ? error.message : String(error)}`,
+            severity: 'error',
+          },
+        ],
+        duration,
+      );
     }
   }
 
   /**
    * Implement validation logic in subclasses
    */
-  protected abstract validate(context: ValidatorContext): Promise<ValidationIssue[]>;
+  protected abstract validate(
+    context: ValidatorContext,
+  ): Promise<ValidationIssue[]>;
 
   /**
    * Create a validation result
@@ -76,14 +84,14 @@ export abstract class BaseValidator {
   protected createResult(
     passed: boolean,
     issues: ValidationIssue[],
-    duration: number = 0
+    duration: number = 0,
   ): ValidationResult {
     return {
       validator: this.name,
       passed,
       severity: this.severity,
       issues,
-      duration
+      duration,
     };
   }
 
@@ -94,13 +102,13 @@ export abstract class BaseValidator {
     file: string,
     message: string,
     severity: ValidatorSeverity = this.severity,
-    options?: Partial<ValidationIssue>
+    options?: Partial<ValidationIssue>,
   ): ValidationIssue {
     return {
       file,
       message,
       severity,
-      ...options
+      ...options,
     };
   }
 
@@ -113,7 +121,7 @@ export abstract class BaseValidator {
       stage: this.stage,
       enabled: this.enabled,
       severity: this.severity,
-      options: this.options
+      options: this.options,
     };
   }
 
@@ -144,10 +152,13 @@ export abstract class BaseValidator {
 /**
  * Helper to check if content contains pattern
  */
-export function containsPattern(content: string, pattern: RegExp): Array<{ line: number; match: string }> {
+export function containsPattern(
+  content: string,
+  pattern: RegExp,
+): Array<{ line: number; match: string }> {
   const results: Array<{ line: number; match: string }> = [];
   const lines = content.split('\n');
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line && pattern.test(line)) {
@@ -155,70 +166,80 @@ export function containsPattern(content: string, pattern: RegExp): Array<{ line:
       results.push({ line: i + 1, match: match?.[0] ?? line });
     }
   }
-  
+
   return results;
 }
 
 /**
  * Helper to extract imports from code
  */
-export function extractImports(content: string): Array<{ line: number; module: string; isDefault: boolean }> {
-  const imports: Array<{ line: number; module: string; isDefault: boolean }> = [];
+export function extractImports(
+  content: string,
+): Array<{ line: number; module: string; isDefault: boolean }> {
+  const imports: Array<{ line: number; module: string; isDefault: boolean }> =
+    [];
   const lines = content.split('\n');
-  
-  const importRegex = /import\s+(?:(\w+)|{[^}]+}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/;
-  const requireRegex = /(?:const|let|var)\s+(?:(\w+)|{[^}]+})\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/;
-  
+
+  const importRegex =
+    /import\s+(?:(\w+)|{[^}]+}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/;
+  const requireRegex =
+    /(?:const|let|var)\s+(?:(\w+)|{[^}]+})\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!line) continue;
-    
+
     let match = line.match(importRegex);
     if (match) {
       imports.push({
         line: i + 1,
         module: match[2] ?? '',
-        isDefault: !!match[1]
+        isDefault: !!match[1],
       });
       continue;
     }
-    
+
     match = line.match(requireRegex);
     if (match) {
       imports.push({
         line: i + 1,
         module: match[2] ?? '',
-        isDefault: !!match[1]
+        isDefault: !!match[1],
       });
     }
   }
-  
+
   return imports;
 }
 
 /**
  * Helper to get function calls in code
  */
-export function extractFunctionCalls(content: string): Array<{ line: number; call: string; object?: string }> {
+export function extractFunctionCalls(
+  content: string,
+): Array<{ line: number; call: string; object?: string }> {
   const calls: Array<{ line: number; call: string; object?: string }> = [];
   const lines = content.split('\n');
-  
+
   // Match patterns like: object.method(), method(), await method()
   const callRegex = /(?:(\w+)\.)?(\w+)\s*\(/g;
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!line) continue;
-    
+
     let match;
     while ((match = callRegex.exec(line)) !== null) {
-      calls.push({
+      const callEntry: { line: number; call: string; object?: string } = {
         line: i + 1,
         call: match[2] ?? '',
-        object: match[1]
-      });
+      };
+      if (match[1]) {
+        callEntry.object = match[1];
+      }
+      calls.push(callEntry);
     }
   }
-  
+
   return calls;
 }
