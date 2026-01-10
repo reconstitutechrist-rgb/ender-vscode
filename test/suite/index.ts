@@ -1,5 +1,6 @@
 /**
- * E2E Test Runner
+ * Test Suite Runner for VS Code Extension Tests
+ * Runs inside VS Code's extension host
  */
 
 import * as path from 'path';
@@ -11,12 +12,13 @@ export async function run(): Promise<void> {
   const mocha = new Mocha({
     ui: 'tdd',
     color: true,
+    timeout: 60000, // 60 second timeout for extension tests
   });
 
   const testsRoot = path.resolve(__dirname, '.');
 
   // Find all test files
-  const files = await glob('**/*.test.js', { cwd: testsRoot });
+  const files = await glob('**/**.test.js', { cwd: testsRoot });
 
   // Add files to the test suite
   for (const file of files) {
@@ -34,7 +36,7 @@ export async function run(): Promise<void> {
         }
       });
     } catch (err) {
-      console.error(err);
+      console.error('Error running tests:', err);
       reject(err);
     }
   });

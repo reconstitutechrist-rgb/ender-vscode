@@ -168,7 +168,7 @@ export class SensitiveFileDetector {
       { regex: /['"]?(gho_[a-zA-Z0-9]{36})['"]?/, type: 'GitHub OAuth Token' },
       { regex: /['"]?(glpat-[a-zA-Z0-9\-_]{20,})['"]?/, type: 'GitLab Token' },
       {
-        regex: /['"]?(xox[baprs]-[a-zA-Z0-9\-]{10,})['"]?/,
+        regex: /['"]?(xox[baprs]-[a-zA-Z0-9-]{10,})['"]?/,
         type: 'Slack Token',
       },
 

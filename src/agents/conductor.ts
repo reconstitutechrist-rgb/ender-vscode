@@ -102,7 +102,10 @@ export class ConductorAgent extends BaseAgent {
         system: systemPrompt,
         messages,
         maxTokens: this.maxTokens,
-        metadata: this.buildMetadata(params.planId || generateId(), params.planId),
+        metadata: this.buildMetadata(
+          params.planId || generateId(),
+          params.planId,
+        ),
       });
 
       // Parse the routing decision
@@ -134,13 +137,16 @@ export class ConductorAgent extends BaseAgent {
       }
 
       // Return routing decision for orchestrator to act on (include taskType)
-      return this.createSuccessResult(JSON.stringify({ ...decision, taskType }), {
-        confidence: this.calculateConfidence(decision),
-        tokensUsed: response.usage,
-        startTime,
-        explanation: decision.routingReason,
-        nextAgent: decision.selectedAgents[0] as AgentType,
-      });
+      return this.createSuccessResult(
+        JSON.stringify({ ...decision, taskType }),
+        {
+          confidence: this.calculateConfidence(decision),
+          tokensUsed: response.usage,
+          startTime,
+          explanation: decision.routingReason,
+          nextAgent: decision.selectedAgents[0] as AgentType,
+        },
+      );
     } catch (error) {
       this.log('Error in conductor', { error });
       return this.createErrorResult(

@@ -391,7 +391,7 @@ export class SanityCheckerAgent extends BaseAgent {
     // Find type annotations in the changed file
     // Match patterns like `: TypeName`, `as TypeName`, `<TypeName>`, `extends TypeName`, `implements TypeName`
     const typeUsagePatterns = [
-      /:\s*([A-Z]\w+)(?:<[^>]+>)?(?:\s*[;,\)\]=]|\s*$)/gm,
+      /:\s*([A-Z]\w+)(?:<[^>]+>)?(?:\s*[;,)=\]]|\s*$)/gm,
       /as\s+([A-Z]\w+)/g,
       /<([A-Z]\w+)(?:\s*[,>])/g,
       /extends\s+([A-Z]\w+)/g,

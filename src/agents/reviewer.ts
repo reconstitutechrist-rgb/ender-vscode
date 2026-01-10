@@ -18,6 +18,7 @@ import type {
 } from '../types';
 import { logger, generateId, hashContent } from '../utils';
 import { validationPipeline } from '../validators';
+import { apiClient } from '../api';
 import { conductorAgent } from './conductor';
 import { gitManagerAgent } from './git-manager';
 
@@ -64,7 +65,6 @@ export class ReviewerAgent extends BaseAgent {
       capabilities: ['code_review', 'validation', 'quality_assurance'],
       maxTokens: 4096,
     };
-    const { apiClient } = require('../api');
     super(config, apiClient);
   }
 
@@ -147,7 +147,10 @@ export class ReviewerAgent extends BaseAgent {
     // Validate plan scope before running pipeline
     if (context.currentPlan) {
       const proposedFiles = changes.map((c) => c.path);
-      const scopeResult = conductorAgent.validatePlanScope(proposedFiles, context);
+      const scopeResult = conductorAgent.validatePlanScope(
+        proposedFiles,
+        context,
+      );
       if (!scopeResult.valid) {
         logger.warn('Scope violations detected', 'Reviewer', {
           violations: scopeResult.violations,

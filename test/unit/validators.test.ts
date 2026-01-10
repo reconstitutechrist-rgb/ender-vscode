@@ -7,9 +7,10 @@ import {
   SyntaxValidator,
   BestPracticesValidator,
   SecurityScannerValidator,
-  ApiExistenceValidator
+  ApiExistenceValidator,
+  type ValidatorContext
 } from '../../src/validators';
-import type { ValidatorContext, FileChange } from '../../src/types';
+import type { FileChange } from '../../src/types';
 
 describe('Validators', () => {
   const createContext = (changes: FileChange[]): ValidatorContext => ({

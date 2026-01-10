@@ -193,7 +193,11 @@ export class DependencyVerifierValidator extends BaseValidator {
 
   private mapDependencyIssue(
     code: string,
-  ): 'not_installed' | 'not_in_package_json' | 'wrong_name' | 'deprecated_package' {
+  ):
+    | 'not_installed'
+    | 'not_in_package_json'
+    | 'wrong_name'
+    | 'deprecated_package' {
     if (code.includes('NOT_INSTALLED') || code.includes('UNKNOWN'))
       return 'not_installed';
     if (code.includes('DEPRECATED')) return 'deprecated_package';
@@ -325,16 +329,15 @@ export class DeprecationDetectorValidator extends BaseValidator {
 
   async run(context: ValidatorContext): Promise<DeprecationResult> {
     const baseResult = await super.run(context);
-    const deprecations: DeprecationResult['deprecations'] = baseResult.issues.map(
-      (issue) => ({
+    const deprecations: DeprecationResult['deprecations'] =
+      baseResult.issues.map((issue) => ({
         file: issue.file,
         line: issue.line ?? 0,
         deprecated: this.extractDeprecated(issue.message),
         reason: issue.message,
         replacement: issue.suggestion ?? '',
         autoFixAvailable: false,
-      }),
-    );
+      }));
     return { ...baseResult, deprecations };
   }
 
@@ -499,7 +502,7 @@ export class StyleMatcherValidator extends BaseValidator {
 
       // Indentation
       tabs += (content.match(/^\t/gm) ?? []).length;
-      spaces += (content.match(/^  /gm) ?? []).length;
+      spaces += (content.match(/^ {2}/gm) ?? []).length;
     }
 
     style['quotes'] = singleQuotes > doubleQuotes ? 'single' : 'double';
@@ -521,7 +524,7 @@ export class StyleMatcherValidator extends BaseValidator {
     style['semicolons'] = semicolons > lines * 0.3 ? 'yes' : 'no';
 
     const tabs = (content.match(/^\t/gm) ?? []).length;
-    const spaces = (content.match(/^  /gm) ?? []).length;
+    const spaces = (content.match(/^ {2}/gm) ?? []).length;
     style['indent'] = tabs > spaces ? 'tabs' : 'spaces';
 
     return style;
@@ -616,7 +619,8 @@ export class ComplexityAnalyzerValidator extends BaseValidator {
   private mapComplexityType(
     code: string,
   ): 'over_engineered' | 'under_engineered' {
-    if (code.includes('UNDER') || code.includes('SIMPLE')) return 'under_engineered';
+    if (code.includes('UNDER') || code.includes('SIMPLE'))
+      return 'under_engineered';
     return 'over_engineered';
   }
 
@@ -816,10 +820,13 @@ export class EdgeCaseCheckerValidator extends BaseValidator {
   private mapEdgeCaseType(
     code: string,
   ): EdgeCaseResult['missingHandling'][number]['edgeCase'] {
-    if (code.includes('NULL') || code.includes('UNDEFINED')) return 'null_undefined';
+    if (code.includes('NULL') || code.includes('UNDEFINED'))
+      return 'null_undefined';
     if (code.includes('EMPTY') && code.includes('ARRAY')) return 'empty_array';
-    if (code.includes('EMPTY') && code.includes('STRING')) return 'empty_string';
-    if (code.includes('ERROR') || code.includes('CATCH')) return 'network_error';
+    if (code.includes('EMPTY') && code.includes('STRING'))
+      return 'empty_string';
+    if (code.includes('ERROR') || code.includes('CATCH'))
+      return 'network_error';
     if (code.includes('PARSE') || code.includes('JSON')) return 'invalid_input';
     return 'null_undefined';
   }
@@ -1109,7 +1116,10 @@ export class DocSyncValidatorValidator extends BaseValidator {
         suggestion: this.mapDocSuggestion(issue.code ?? ''),
       }));
     const missingDocs: DocSyncResult['missingDocs'] = baseResult.issues
-      .filter((issue) => issue.code?.includes('MISSING') || issue.code?.includes('NO_DOC'))
+      .filter(
+        (issue) =>
+          issue.code?.includes('MISSING') || issue.code?.includes('NO_DOC'),
+      )
       .map((issue) => ({
         file: issue.file,
         symbol: 'unknown',
@@ -1119,9 +1129,7 @@ export class DocSyncValidatorValidator extends BaseValidator {
     return { ...baseResult, outOfSync, missingDocs };
   }
 
-  private mapDocType(
-    code: string,
-  ): DocSyncResult['outOfSync'][number]['type'] {
+  private mapDocType(code: string): DocSyncResult['outOfSync'][number]['type'] {
     if (code.includes('JSDOC')) return 'jsdoc';
     if (code.includes('README')) return 'readme';
     if (code.includes('API')) return 'api_doc';

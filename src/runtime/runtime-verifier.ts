@@ -4,6 +4,7 @@
  */
 
 import * as vscode from 'vscode';
+import { exec } from 'child_process';
 import { logger } from '../utils';
 import type { RuntimeVerificationConfig } from '../types';
 
@@ -334,8 +335,6 @@ export class RuntimeVerifier {
     coverage?: { lines: number; functions: number; branches: number };
   }> {
     return new Promise((resolve) => {
-      const { exec } = require('child_process');
-
       exec(
         command,
         {

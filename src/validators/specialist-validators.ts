@@ -48,7 +48,12 @@ export class HookRulesCheckerValidator extends BaseValidator {
 
   private mapHookRule(
     code: string,
-  ): 'conditional_hook' | 'loop_hook' | 'wrong_order' | 'missing_deps' | 'invalid_name' {
+  ):
+    | 'conditional_hook'
+    | 'loop_hook'
+    | 'wrong_order'
+    | 'missing_deps'
+    | 'invalid_name' {
     if (code.includes('CONDITIONAL')) return 'conditional_hook';
     if (code.includes('LOOP')) return 'loop_hook';
     if (code.includes('DEPS')) return 'missing_deps';
@@ -89,7 +94,8 @@ export class HookRulesCheckerValidator extends BaseValidator {
         /if\s*\([^)]*\)\s*{[^}]*use[A-Z]\w*\s*\(/.test(line) ||
         (line.includes('if') && lines[i + 1]?.includes('use'))
       ) {
-        const hookMatch = hookRegex.exec(line) ?? hookRegex.exec(lines[i + 1] ?? '');
+        const hookMatch =
+          hookRegex.exec(line) ?? hookRegex.exec(lines[i + 1] ?? '');
         hookRegex.lastIndex = 0; // Reset regex state
         const hookName = hookMatch?.[1] ?? 'Hook';
         issues.push(
@@ -234,14 +240,20 @@ export class EventLeakDetectorValidator extends BaseValidator {
       eventType: this.mapEventType(issue.code ?? ''),
       registrationCode: issue.message,
       missingCleanup: this.getMissingCleanup(issue.code ?? ''),
-      severity: issue.severity === 'error' ? ('high' as const) : ('medium' as const),
+      severity:
+        issue.severity === 'error' ? ('high' as const) : ('medium' as const),
     }));
     return { ...baseResult, leaks };
   }
 
   private mapEventType(
     code: string,
-  ): 'dom_listener' | 'emitter_listener' | 'subscription' | 'interval' | 'timeout' {
+  ):
+    | 'dom_listener'
+    | 'emitter_listener'
+    | 'subscription'
+    | 'interval'
+    | 'timeout' {
     if (code.includes('EVENT_LISTENER')) return 'dom_listener';
     if (code.includes('EMITTER')) return 'emitter_listener';
     if (code.includes('SUBSCRIPTION')) return 'subscription';
@@ -399,9 +411,15 @@ export class ApiContractValidatorValidator extends BaseValidator {
 
   private mapApiIssue(
     code: string,
-  ): 'wrong_method' | 'missing_param' | 'wrong_type' | 'deprecated_endpoint' | 'missing_auth' {
+  ):
+    | 'wrong_method'
+    | 'missing_param'
+    | 'wrong_type'
+    | 'deprecated_endpoint'
+    | 'missing_auth' {
     if (code.includes('AUTH')) return 'missing_auth';
-    if (code.includes('NO_ERROR') || code.includes('NO_CATCH')) return 'wrong_method';
+    if (code.includes('NO_ERROR') || code.includes('NO_CATCH'))
+      return 'wrong_method';
     return 'missing_param';
   }
 
@@ -514,7 +532,12 @@ export class AuthFlowValidatorValidator extends BaseValidator {
 
   private mapAuthIssue(
     code: string,
-  ): 'missing_refresh' | 'insecure_storage' | 'missing_validation' | 'exposed_token' | 'missing_logout' {
+  ):
+    | 'missing_refresh'
+    | 'insecure_storage'
+    | 'missing_validation'
+    | 'exposed_token'
+    | 'missing_logout' {
     if (code.includes('STORAGE')) return 'insecure_storage';
     if (code.includes('VALIDATION')) return 'missing_validation';
     if (code.includes('URL')) return 'exposed_token';
@@ -845,7 +868,12 @@ export class DockerBestPracticesValidator extends BaseValidator {
 
   private mapDockerRule(
     code: string,
-  ): 'no_latest_tag' | 'missing_user' | 'secrets_in_build' | 'large_image' | 'no_healthcheck' {
+  ):
+    | 'no_latest_tag'
+    | 'missing_user'
+    | 'secrets_in_build'
+    | 'large_image'
+    | 'no_healthcheck' {
     if (code.includes('LATEST')) return 'no_latest_tag';
     if (code.includes('ROOT') || code.includes('USER')) return 'missing_user';
     if (code.includes('SECRET')) return 'secrets_in_build';
@@ -953,7 +981,8 @@ export class CloudConfigValidatorValidator extends BaseValidator {
         issue: this.mapCloudIssue(issue.code ?? ''),
         severity: this.mapCloudSeverity(issue.code ?? ''),
         description: issue.message,
-        recommendation: issue.suggestion ?? 'Follow cloud security best practices',
+        recommendation:
+          issue.suggestion ?? 'Follow cloud security best practices',
       }),
     );
     return { ...baseResult, cloudIssues };
@@ -961,8 +990,14 @@ export class CloudConfigValidatorValidator extends BaseValidator {
 
   private mapCloudIssue(
     code: string,
-  ): 'overly_permissive' | 'missing_encryption' | 'public_access' | 'no_logging' | 'invalid_config' {
-    if (code.includes('ACTION') || code.includes('RESOURCE')) return 'overly_permissive';
+  ):
+    | 'overly_permissive'
+    | 'missing_encryption'
+    | 'public_access'
+    | 'no_logging'
+    | 'invalid_config' {
+    if (code.includes('ACTION') || code.includes('RESOURCE'))
+      return 'overly_permissive';
     if (code.includes('PUBLIC')) return 'public_access';
     return 'invalid_config';
   }

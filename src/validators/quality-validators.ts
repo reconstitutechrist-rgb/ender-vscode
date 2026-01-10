@@ -515,7 +515,8 @@ export class SecurityScannerValidator extends BaseValidator {
         severity: this.mapSeverity(issue.code ?? ''),
         type: this.mapSecurityType(issue.code ?? ''),
         description: issue.message,
-        recommendation: issue.suggestion ?? this.getRecommendation(issue.code ?? ''),
+        recommendation:
+          issue.suggestion ?? this.getRecommendation(issue.code ?? ''),
       }));
     return {
       ...baseResult,
@@ -523,10 +524,12 @@ export class SecurityScannerValidator extends BaseValidator {
     };
   }
 
-  private mapSeverity(
-    code: string,
-  ): 'critical' | 'high' | 'medium' | 'low' {
-    if (code.includes('SECRET') || code.includes('SQL_INJECTION') || code.includes('EVAL')) {
+  private mapSeverity(code: string): 'critical' | 'high' | 'medium' | 'low' {
+    if (
+      code.includes('SECRET') ||
+      code.includes('SQL_INJECTION') ||
+      code.includes('EVAL')
+    ) {
       return 'critical';
     }
     if (code.includes('XSS') || code.includes('PATH_TRAVERSAL')) {
@@ -554,7 +557,8 @@ export class SecurityScannerValidator extends BaseValidator {
       SEC_SQL_INJECTION: 'Use parameterized queries or an ORM',
       SEC_XSS: 'Sanitize user input and use safe DOM APIs',
       SEC_PATH_TRAVERSAL: 'Validate and sanitize file paths',
-      SEC_INSECURE_RANDOM: 'Use crypto.randomBytes() for security-sensitive values',
+      SEC_INSECURE_RANDOM:
+        'Use crypto.randomBytes() for security-sensitive values',
       SEC_EVAL: 'Avoid dynamic code execution; use safer alternatives',
     };
     return recommendations[code] ?? 'Review and fix the security issue';

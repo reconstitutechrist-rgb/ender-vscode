@@ -139,7 +139,8 @@ export class HallucinationDetectorValidator extends BaseValidator {
   readonly name = 'hallucination-detector' as const;
   readonly stage = 'scope' as const;
 
-  private unattributedCode: HallucinationDetectorResult['unattributedCode'] = [];
+  private unattributedCode: HallucinationDetectorResult['unattributedCode'] =
+    [];
 
   async run(context: ValidatorContext): Promise<HallucinationDetectorResult> {
     this.unattributedCode = [];
@@ -345,7 +346,10 @@ export class ChangeSizeMonitorValidator extends BaseValidator {
             { code: 'SIZE_FILES_EXCEEDED' },
           ),
         );
-        this.sizeMetrics.percentageOver = Math.max(this.sizeMetrics.percentageOver, percentOver);
+        this.sizeMetrics.percentageOver = Math.max(
+          this.sizeMetrics.percentageOver,
+          percentOver,
+        );
         this.sizeMetrics.alert = 'critical';
       } else if (fileRatio > warningThreshold) {
         issues.push(
@@ -356,7 +360,10 @@ export class ChangeSizeMonitorValidator extends BaseValidator {
             { code: 'SIZE_FILES_WARNING' },
           ),
         );
-        this.sizeMetrics.percentageOver = Math.max(this.sizeMetrics.percentageOver, percentOver);
+        this.sizeMetrics.percentageOver = Math.max(
+          this.sizeMetrics.percentageOver,
+          percentOver,
+        );
         if (this.sizeMetrics.alert !== 'critical') {
           this.sizeMetrics.alert = 'warning';
         }
@@ -377,7 +384,10 @@ export class ChangeSizeMonitorValidator extends BaseValidator {
             { code: 'SIZE_LINES_EXCEEDED' },
           ),
         );
-        this.sizeMetrics.percentageOver = Math.max(this.sizeMetrics.percentageOver, percentOver);
+        this.sizeMetrics.percentageOver = Math.max(
+          this.sizeMetrics.percentageOver,
+          percentOver,
+        );
         this.sizeMetrics.alert = 'critical';
       } else if (lineRatio > warningThreshold) {
         issues.push(
@@ -388,7 +398,10 @@ export class ChangeSizeMonitorValidator extends BaseValidator {
             { code: 'SIZE_LINES_WARNING' },
           ),
         );
-        this.sizeMetrics.percentageOver = Math.max(this.sizeMetrics.percentageOver, percentOver);
+        this.sizeMetrics.percentageOver = Math.max(
+          this.sizeMetrics.percentageOver,
+          percentOver,
+        );
         if (this.sizeMetrics.alert !== 'critical') {
           this.sizeMetrics.alert = 'warning';
         }

@@ -131,12 +131,13 @@ export class MemoryKeeperAgent extends BaseAgent {
         }
         break;
 
-      case 'phase_completed':
+      case 'phase_completed': {
         const phase = options.plan?.phases[options.plan.currentPhaseIndex];
         entry.summary = `Completed: ${phase?.title ?? 'Phase'}`;
         entry.detail = phase?.description ?? '';
         entry.relatedFiles = phase?.affectedFiles ?? [];
         break;
+      }
 
       case 'dependency_added':
         entry.summary = `Added dependency: ${options.content ?? 'unknown'}`;
